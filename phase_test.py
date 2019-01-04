@@ -103,8 +103,6 @@ plt.xlabel('x, m')
 plt.ylabel('$p_x$, rad')
 plt.title('One particle in during 1024 consequent turns. Distorted orbit')
 #plt.savefig('phase_space_x_dist1.pdf')
-
-
 plt.show()
 
 
