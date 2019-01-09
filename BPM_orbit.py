@@ -52,7 +52,6 @@ ESet  = AddErrorSet(teapot_latt, positioni, positionf, setDict, paramsDict, seed
 matrix_lattice = TEAPOT_MATRIX_Lattice(teapot_latt,b)
 (muX, arrPosAlphaX, arrPosBetaX) = matrix_lattice.getRingTwissDataX()
 (muY, arrPosAlphaY, arrPosBetaY) = matrix_lattice.getRingTwissDataY()
-
 #----------------------------------Bunch-Distribusion------------------------------------------------
 # machted beam
 emittance_x, emittance_y = 10**(-8),10**(-8) # should be checked and corrected
