@@ -5,7 +5,7 @@ from orbit.teapot import teapot
 from orbit.teapot import TEAPOT_MATRIX_Lattice
 
 from bunch import Bunch, BunchTwissAnalysis
-from orbit.bunch_generators import TwissContainer, GaussDist2D
+from orbit.bunch_generators import TwissContainer, GaussDist2D, KVDist2D
 
 from orbit.orbit_correction import orbit, correction
 
@@ -15,7 +15,7 @@ from orbit.errors import AddErrorNode, AddErrorSet
 
 # get lattice from madx
 teapot_latt = teapot.TEAPOT_Lattice()
-teapot_latt.readMAD("sis18.lat","SIS18")
+teapot_latt.readMAD("sis100.lat","SIS100")
 
 #---------------------------------------------Bunch init---------------------------------------------
 b = Bunch()
@@ -23,7 +23,7 @@ b = Bunch()
 b.mass(0.93827231)
 b.macroSize(1.0)
 
-energy = 1.0 #Gev
+energy = 1 #Gev
 b.getSyncParticle().kinEnergy(energy)
 #----------------------------------------------------------------------------------------------------
 
@@ -38,14 +38,23 @@ paramsDict["subtype"]  = "TransDisp"
 paramsDict["sample"]      = "Uniform"
 paramsDict["maximum"]        = 0.5
 paramsDict["minimum"]       = 0.0
-paramsDict["dx"]       = 0.007
-paramsDict["dy"]       = 0.007
+paramsDict["dx"]       = 0.001
+paramsDict["dy"]       = 0.001
 
 setDict["elementtype"] = "quad"
 setDict["ringline"] = "ring"
 
 ESet  = AddErrorSet(teapot_latt, positioni, positionf, setDict, paramsDict, seed_value=50)
-#ESet  = AddErrorSet(teapot_latt, positioni, positionf, setDict, paramsDict) # Random
+
+paramsDict["errtype"]  = "FieldError"
+paramsDict["subtype"]  = "QuadField"
+paramsDict["sample"]      = "Uniform"
+paramsDict["fracerr"]      = 0.05
+
+setDict["elementtype"] = "quad"
+setDict["ringline"] = "ring"
+
+ESet  = AddErrorSet(teapot_latt, positioni, positionf, setDict, paramsDict, seed_value=50)
 #---------------------------------------------ORBIT ERRORS-------------------------------------------
 
 # get lattice function from transfer matrices
@@ -54,18 +63,26 @@ matrix_lattice = TEAPOT_MATRIX_Lattice(teapot_latt,b)
 (muY, arrPosAlphaY, arrPosBetaY) = matrix_lattice.getRingTwissDataY()
 #----------------------------------Bunch-Distribusion------------------------------------------------
 # machted beam
-emittance_x, emittance_y = 10**(-8),10**(-8) # should be checked and corrected
+emittance_x, emittance_y = 35*10**(-6),15*10**(-6) # should be checked and corrected
 twissX = TwissContainer(arrPosAlphaX[0][1], arrPosBetaX[0][1], emittance_x)
 twissY = TwissContainer(arrPosAlphaY[0][1], arrPosBetaY[0][1], emittance_y)
 
+#---------------------------------------------CALCULATE ORBIT------------------------------
+
+OrbitX, OrbitY = orbit(teapot_latt,b).get_orbit() 
 
 
-dE = 0.000197*0
-n=128 # num of particles
-dist = GaussDist2D(twissX,twissY)
+x0, px0 = OrbitX[0][1], OrbitX[0][2]
+y0, py0 = OrbitY[0][1], OrbitY[0][2]
+#----------------------------------------------------------------------------------------------------
+
+
+
+n=10**(6) # num of particles
+dist = KVDist2D(twissX,twissY)
 for i in range(n):
-    x,px,y,py = dist.getCoordinates()
-    b.addParticle(x,px,y,py,0,dE)
+    xi,pxi,yi,pyi = dist.getCoordinates()
+    b.addParticle(x0+xi,px0+pxi,y0++yi,py0+pyi,0,0)
 
 #----------------------------------------------------------------------------------------------------
 
@@ -76,71 +93,8 @@ position = [teapot_latt.getNodePositionsDict()[node][0] for node in nodes if nod
 bunchtwissanalysis = BunchTwissAnalysis()
 
 #----------------------------------------------------------------------------------------------------
-# the method calculates (<x>,<y>, emittance, num_particles) of the beam distribution
-def getBPMinfo(beam):
-
-    N = beam.getTotalCount()
-    if not N:
-        print('BEAM LOST')
-        return 0,0,0,0,0
-
-#    m =[[beam.x(i), beam.px(i), beam.y(i), beam.py(i)] for i in range(N)] 
-    m =[[beam.x(i), beam.y(i), beam.z(i), beam.dE(i)] for i in range(N)] 
-
-    xx = np.transpose(m)
-    x_mean = np.mean(xx[0])
-#    y_mean = np.mean(xx[2])
-    y_mean = np.mean(xx[1])
-    z_mean = np.mean(xx[2])
-    E_mean = np.mean(xx[3])
-
-#    e_x = np.sqrt(np.dot(xx[0],xx[0])*np.dot(xx[1],xx[1])-(np.dot(xx[0],xx[1]))**2 )
-#    e_y = np.sqrt(np.dot(xx[2],xx[2])*np.dot(xx[3],xx[3])-(np.dot(xx[2],xx[3]))**2 )
-        
-#    return x_mean, y_mean, e_x, e_y, N
-    return x_mean, y_mean, z_mean, E_mean, N
-
-
-
-# the method calculates (<x>,<y>, emittance, num_particles) of the beam distribution
-# The same method, but for large num of particles. dumbBunch -> write-read of files
-def getBPMinfoFile(beam, filename):
-
-    head = 13 
-    m = list()
-    N = beam.getTotalCount()
-    if not N:
-        print('BEAM LOST')
-        return 0,0,0,0,0
-
-    f = open(filename,'r')    
-    for i,line in enumerate(f): 
-        if i>head:
-            m.append([float(x) for x in line.split()])
-    f.close()
-
-    xx = np.transpose(m)
-    x_mean = np.mean(xx[0])
-    y_mean = np.mean(xx[2])
-
-    e_x = np.sqrt(np.dot(xx[0],xx[0])*np.dot(xx[1],xx[1])-(np.dot(xx[0],xx[1]))**2 )
-    e_y = np.sqrt(np.dot(xx[2],xx[2])*np.dot(xx[3],xx[3])-(np.dot(xx[2],xx[3]))**2 )
-        
-    return x_mean, y_mean, e_x, e_y, N
-
-
-#----------------------------------------------------------------------------------------------------
-# the method calculates (<x>,<y>, emittance, num_particles) of the beam distribution for all BPMs in the lattice
+# the method calculates (<x>,<y>) of the beam distribution for all BPMs in the lattice
 # the tracking takes place inside this method
-def getAllBPMsInfo_old(beam, lattice_nodes, filename):
-    lst = list()
-    for node in lattice_nodes:
-        node.trackBunch(beam)
-#        beam.dumpBunch(filename) 
-        if node.getType()=='monitor teapot':
-            lst.append(getBPMinfo(beam))
-#            lst.append(getBPMinfoFile(beam,filename))
-    return lst
 
 
 def getAllBPMsInfo(beam, lattice_nodes):
@@ -152,14 +106,14 @@ def getAllBPMsInfo(beam, lattice_nodes):
             x = bunchtwissanalysis.getAverage(0)
             y = bunchtwissanalysis.getAverage(2)
             lst.append([x,y])
+            
     return lst
 
 #----------------------------------------------------------------------------------------------------
 
 # in order to get beam oscillations, one can repeat getALLBPMsInfo method n_turn times
 
-n_turn = 1024
-#arr = [getAllBPMsInfo(b,nodes,'final.dat') for i in range(n_turn)]
+n_turn = 256
 arr = [getAllBPMsInfo(b,nodes) for i in range(n_turn)]
 
         
@@ -169,13 +123,24 @@ y_full = lst[1]
 
 
 
-x_mean = [np.mean(x) for x in x_full]
-y_mean = [np.mean(y) for y in y_full]
+x_mean = [np.mean(elem) for elem in x_full]
+y_mean = [np.mean(elem) for elem in y_full]
 
-#---------------------------------------------CALCULATE ORBIT------------------------------
+mx = [elem-np.mean(elem) for elem in x_full]
+my = [elem-np.mean(elem) for elem in y_full]
 
-OrbitX, OrbitY = orbit(teapot_latt,b).get_orbit() 
+U, s, V = np.linalg.svd(np.transpose(mx), full_matrices=True)
+betaX = pow(s[0],2)*(V[0]**2)+pow(s[1],2)*(V[1]**2)
+U, s, V = np.linalg.svd(np.transpose(my), full_matrices=True)
+betaY = pow(s[0],2)*(V[0]**2)+pow(s[1],2)*(V[1]**2)
 
+beta_orbit_x = np.transpose(arrPosBetaX)
+beta_orbit_y = np.transpose(arrPosBetaY)
+
+kappaX = beta_orbit_x[1][5]/betaX[0]
+kappaY = beta_orbit_y[1][5]/betaY[0]
+
+# ORBIT
 x = []
 y = []
 s = []
@@ -184,37 +149,47 @@ for i in xrange(len(OrbitX)):
 	x.append(OrbitX[i][1])
 	y.append(OrbitY[i][1])
 
-
-
 #----------------------------------------------------------------------------------------------------
+#Comparison between pyORBIT and multi-turn tracking methods
 
 
 plt.figure()
-plt.plot(s,x,'r-', label="x")
-plt.scatter(position,x_mean)
+plt.plot(beta_orbit_x[0],beta_orbit_x[1],'-x', label="X-beta pyORBIT")
+plt.scatter(position,kappaX*betaX, color = 'red', label="X-beta MIA")
 plt.legend(loc="lower right")
 plt.grid(True, ls = '--')
-plt.ylim([min(x_mean),max(x_mean)])
-#plt.savefig('X-orbit_quad.pdf')
+plt.xlim([0,100])
+#plt.savefig('beta.pdf')
 
 plt.figure()
-plt.plot(s,y,'b-', label="y")
-plt.scatter(position,y_mean)
+plt.plot(beta_orbit_y[0],beta_orbit_y[1],'b-x', label="Y-beta pyORBIT")
+plt.scatter(position,kappaY*betaY, color = 'blue', label="Y-beta MIA")
 plt.legend(loc="lower right")
 plt.grid(True, ls = '--')
-plt.ylim([min(y_mean),max(y_mean)])
-#plt.savefig('Y-orbit_quad.pdf')
+plt.xlim([0,100])
+#plt.savefig('beta.pdf')
 
 
-
-'''
 plt.figure()
-plt.plot(ex_full[0], label="X_emittance")
-plt.plot(ey_full[0], label="Y_emittance")
+plt.plot(s,x,'r-x', label="x orbit, standart pyORBIT")
+plt.scatter(position,x_mean, label="x at BPMs, multi-turn tracking method")
 plt.legend(loc="lower right")
 plt.grid(True, ls = '--')
-#plt.savefig('emittance.pdf')
-'''
+#plt.ylim([min(x),max(x)])
+plt.title('X-plane. {} particles, {} turns'.format(n,n_turn))
+#plt.title('X-plane. Drift length = 4 instead of 3.062')
+#plt.savefig('X-orbit_drift.pdf')
+
+plt.figure()
+plt.plot(s,y,'g-x', label="y, standart pyORBIT")
+plt.scatter(position,y_mean,label="x at BPMs, multi-turn tracking method")
+plt.legend(loc="lower right")
+plt.grid(True, ls = '--')
+#plt.ylim([min(y),max(y)])
+plt.title('Y-plane. {} particles, {} turns'.format(n,n_turn))
+#plt.title('Y-plane. Drift length = 4 instead of 3.062')
+#plt.savefig('Y-orbit_drift.pdf')
+
 plt.show()
 
 
