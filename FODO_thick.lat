@@ -1,0 +1,124 @@
+! *********************************************************************
+! Definition of parameters
+! *********************************************************************
+
+l_cell=100;
+quadrupoleLenght=5;
+f=30;
+//kf:=1/f/quadrupoleLenght;// m^-2
+//kd:=-kf*101/100;// m^-2
+
+kf:=6.77407e-03;
+kd:=-6.54921e-03;
+
+kn0_corr_00 := 0;
+kn0_corr_01 := 0;
+kn0_corr_10 := 0;
+kn0_corr_11 := 0;
+kn0_corr_20 := 0;
+kn0_corr_21 := 0;
+kn0_corr_30 := 0;
+kn0_corr_31 := 0;
+kn0_corr_40 := 0;
+kn0_corr_41 := 0;
+kn0_corr_50 := 0;
+kn0_corr_51 := 0;
+
+kn1_corr_00 :=0;
+kn1_corr_01 :=0;
+kn1_corr_10 :=0;
+kn1_corr_11 :=0;
+kn1_corr_20 :=0;
+kn1_corr_21 :=0;
+kn1_corr_30 :=0;
+kn1_corr_31 :=0;
+kn1_corr_40 :=0;
+kn1_corr_41 :=0;
+kn1_corr_50 :=0;
+kn1_corr_51 :=0;
+
+! *********************************************************************
+! Definition of magnet
+! ********************************************************************* 
+QF: quadrupole, L=quadrupoleLenght, K1:=kf;
+QD: quadrupole, L=quadrupoleLenght, K1:=kd;
+
+CORR: HKICKER, L=1;
+CORR_QD: MULTIPOLE;
+BPM: MONITOR, L=1;
+
+! *********************************************************************
+! Definition of sequence
+! *********************************************************************
+FODO:sequence, refer=entry, L:=6*L_CELL;
+
+CORR_KN0_00: CORR, hkick :=kn0_corr_00,         at=  1;
+QF0: QF,                                        at= 10;
+CORR_KN1_00: CORR_QD, knl:={0,kn1_corr_00},     at= 30;
+CORR_KN0_01: CORR, hkick :=kn0_corr_01,         at= 50;
+QD0: QD,                                        at= 60;
+BPM0: BPM,                                      at= 75;
+CORR_KN1_01: CORR_QD, knl:={0,kn1_corr_01},     at= 90;
+
+CORR_KN0_10: CORR, hkick :=kn0_corr_10,         at=101;
+QF1: QF,                                        at=110;
+CORR_KN1_10: CORR_QD, knl:={0,kn1_corr_10},     at=130;
+CORR_KN0_11: CORR, hkick :=kn0_corr_11,         at=150;
+QD1: QD,                                        at=160;
+BPM1: BPM,                                      at=175;
+CORR_KN1_11: CORR_QD, knl:={0,kn1_corr_11},     at=190;
+
+CORR_KN0_20: CORR, hkick :=kn0_corr_20,         at=201;
+QF2: QF,                                        at=210;
+CORR_KN1_20: CORR_QD, knl:={0,kn1_corr_20},     at=230;
+CORR_KN0_21: CORR, hkick :=kn0_corr_21,         at=250;
+QD2: QD,                                        at=260;
+BPM2: BPM,                                      at=275;
+CORR_KN1_21: CORR_QD, knl:={0,kn1_corr_21},     at=290;
+
+CORR_KN0_30: CORR, hkick :=kn0_corr_30,         at=301;
+QF3: QF,                                        at=310;
+CORR_KN1_30: CORR_QD, knl:={0,kn1_corr_30},     at=330;
+CORR_KN0_31: CORR, hkick :=kn0_corr_31,         at=350;
+QD3: QD,                                        at=360;
+BPM3: BPM,                                      at=375;
+CORR_KN1_31: CORR_QD, knl:={0,kn1_corr_31},     at=390;
+
+CORR_KN0_40: CORR, hkick :=kn0_corr_40,         at=401;
+QF4: QF,                                        at=410;
+CORR_KN1_40: CORR_QD, knl:={0,kn1_corr_40},     at=430;
+CORR_KN0_41: CORR, hkick :=kn0_corr_41,         at=450;
+QD4: QD,                                        at=460;
+BPM4: BPM,                                      at=475;
+CORR_KN1_41: CORR_QD, knl:={0,kn1_corr_41},     at=490;
+
+CORR_KN0_50: CORR, hkick :=kn0_corr_50,         at=501;
+QF5: QF,                                        at=510;
+CORR_KN1_50: CORR_QD, knl:={0,kn1_corr_50},     at=530;
+CORR_KN0_51: CORR, hkick :=kn0_corr_51,         at=550;
+QD5: QD,                                        at=560;
+BPM5: BPM,                                      at=575;
+CORR_KN1_51: CORR_QD, knl:={0,kn1_corr_51},     at=590;
+
+endsequence;
+
+! *********************************************************************
+! Definition of beam
+! *********************************************************************
+beam, particle=proton, energy=2;
+
+! *********************************************************************
+! Use of the sequence
+! *********************************************************************
+use, sequence=FODO;
+
+! *********************************************************************
+! TWISS
+! *********************************************************************
+
+//select,flag=interpolate, class=drift, slice=20, range=#s/#e;
+//select,flag=interpolate, class=quadrupole, slice=10, range=#s/#e;
+
+twiss;
+
+
