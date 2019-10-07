@@ -6,7 +6,7 @@ import sys
 import math
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
+#import pandas as pd
 
 import orbit_mpi
 
@@ -41,7 +41,7 @@ from spacecharge import SpaceChargeCalc2p5D
 print "Start."
 #---------------------------------------------Bunch init---------------------------------------------
 b = Bunch()
-total_macroSize=5e+10
+total_macroSize=4e+10
 b.macroSize(total_macroSize)
 
 energy = 2  
@@ -56,7 +56,6 @@ print "Generate Lattice."
 lattice = TEAPOT_Lattice("lattice")
 lattice.readMADX("fodo_thin.seq","fodo")
 lattice.setUseRealCharge(useCharge = 1)
-
 
 #-----------------------------------------------
 matrix_lattice = TEAPOT_MATRIX_Lattice(lattice,b)
@@ -74,9 +73,6 @@ print "INTRODUCE MISALIGNEMENT IN THE QUADRUPOLES"
 #---------------------------------------------ORBIT ERRORS-------------------------------------------
 # WE INTRODUCE MISALIGNEMENT IN THE QUADRUPOLES; dx, dy = HOR AND VER DISPLACEMENT OF QUADRUPOLES
 
-print("read error table")
-df = pd.read_csv("err.txt",skiprows=[0,1,2,3,4,5,7],delimiter="\s+")
-
 setDict = {}
 paramsDict = {}
 positioni = 0.0
@@ -85,9 +81,10 @@ positionf = lattice.getLength()
 paramsDict["errtype"]  = "StraightError"
 paramsDict["subtype"]  = "TransDisp"
 paramsDict["sample"]      = "ReadFromFile"
+paramsDict["filename"] = "/home/dmitrii/py-orbit/examples/AccLattice_Tests/err.txt"
+
 setDict["elementtype"] = "mult"
 setDict["ringline"] = "ring"
-setDict["table"] = df
 
 print "INTRODUCE FIELD ERRORS IN THE QUADRUPOLES"
 
@@ -95,16 +92,14 @@ print "INTRODUCE FIELD ERRORS IN THE QUADRUPOLES"
 
 paramsDict["errtype"]  = "FieldError"
 paramsDict["subtype"]  = "MultipoleField"
-paramsDict["sample"]      = "ReadFromFile"
-
-
-paramsDict["maximum"]        = 0.1
-paramsDict["minimum"]       = 0.0
 paramsDict["errtype"]  = "FieldError"
-paramsDict["sample"]      = "Gauss"
-paramsDict["fracerr"]      = 0.01
 
-ESet  = AddErrorSet(lattice, positioni, positionf, setDict, paramsDict, seed_value=50)
+#paramsDict["sample"]      = "Gauss"
+#paramsDict["fracerr"]      = 0.001
+#paramsDict["maximum"]        = 0.001
+#paramsDict["minimum"]       = 0.0
+
+#ESet  = AddErrorSet(lattice, positioni, positionf, setDict, paramsDict, seed_value=50)
 #ESet  = AddErrorSet(lattice, positioni, positionf, setDict, paramsDict) # Random
 #---------------------------------------------ORBIT ERRORS-------------------------------------------
 
@@ -143,7 +138,7 @@ sigma_p = 1.0e-3    # rms momentum spread
 
 #===================== m a t c h i n g =====================#
 
-solve = EnvelopeSolver(beamline0)
+solve = EnvelopeSolver(beamline)
 Ksc = Optics().getPerveance(b,beamline[-1].data['s'],emitx,emity)
 
 twiss = solve.match_twiss_matrix(emitx,emity,0.0,0.0) 
@@ -163,12 +158,8 @@ dist = GaussDist3D(twissX,twissY,twissZ)
 dist = KVDist3D(twissX,twissY,twissZ)
 
 
-df_bunch = pd.read_csv("bunch_distribution.csv")
-for i in range(len(df_bunch)):
-	#(x,xp,y,yp,z,zp) = dist.getCoordinates()
-	aux = df_bunch[df_bunch["number"]== i+1]
-
-	(x,xp,y,yp,z,zp) = (float(aux["x"]),float(aux["px"]),float(aux["y"]),float(aux["py"]),float(aux["t"]),float(aux["pt"]))
+for i in range(n_particles):
+	(x,xp,y,yp,z,zp) = dist.getCoordinates()
 	b.addParticle(x, xp, y, yp, z, zp)
 
 
@@ -238,6 +229,10 @@ plt.plot(beta_y[0],beat_y, label="vertical beta-beat")
 
 plt.plot(s_tw,100*(twiss[:,0]/twiss0[:,0]-1),color='k', ls=":",label=r'beatx SC = 0')
 plt.plot(s_tw,100*(twiss_sc[:,0]/twiss0[:,0]-1),color='blue', ls=":",label=r'beatx non-zero SC')
+
+plt.plot(s_tw,100*(twiss[:,2]/twiss0[:,2]-1),color='k', ls=":",label=r'beaty SC = 0')
+plt.plot(s_tw,100*(twiss_sc[:,2]/twiss0[:,2]-1),color='blue', ls=":",label=r'beaty non-zero SC')
+
 plt.xlabel(r'$s$ [m]')
 plt.ylabel(r'$\beta-beat$ [/%]')
 plt.legend(loc=0)
@@ -252,7 +247,7 @@ plt.plot(beta_x[0],beta_x[1], label="horizontal beta-beat")
 
 plt.xlabel(r'$s$ [m]')
 plt.ylabel(r'$\beta_x$ [m]')
-plt.legend(loc=0)
+#plt.legend()
 
 plt.subplot(212)
 plt.scatter(s_tw,twiss[:,2],color='b',label=r'$\beta_x$')
@@ -261,7 +256,7 @@ plt.plot(beta_y[0],beta_y[1], label="vertical beta-beat")
 
 plt.xlabel(r'$s$ [m]')
 plt.ylabel(r'$\beta_y$ [m]')
-plt.legend(loc=0)
+#plt.legend()
 plt.subplots_adjust(bottom=0.15,left=0.15,hspace=0.5)
 
 #--------------------------------------------------------------------------------

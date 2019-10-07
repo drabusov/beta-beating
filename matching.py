@@ -8,7 +8,7 @@ from scipy.integrate import odeint
 from scipy.constants import c
 from matplotlib.pyplot import * # why do you need pyplot here?
 
-from orbit.orbit_correction import orbit
+#from orbit.orbit_correction import orbit
 
 from copy import copy, deepcopy
 
@@ -112,14 +112,17 @@ class Optics:
 		(arrmuX, arrPosAlphaX, arrPosBetaX) = matrix_lattice.getRingTwissDataX()
 		(arrmuY, arrPosAlphaY, arrPosBetaY) = matrix_lattice.getRingTwissDataY()
 		#(OrbX,OrbY) = matrix_lattice.getRingOrbit()
-		OrbitX, OrbitY = orbit(lattice,bunch).get_orbit()
+		#OrbitX, OrbitY = orbit(lattice,bunch).get_orbit()
 
-		XpArr,YpArr = [],[]
-		for i in range(len(OrbitX)-1):
-			XpArr.append((OrbitX[i+1][1]-OrbitX[i][1])/(OrbitX[i+1][0]-OrbitX[i][0]))
-			YpArr.append((OrbitY[i+1][1]-OrbitY[i][1])/(OrbitY[i+1][0]-OrbitY[i][0]))
-		XpArr.append((OrbitX[0][1]-OrbitX[-1][1])/(OrbitX[0][0]-OrbitX[-1][0]))
-		YpArr.append((OrbitY[0][1]-OrbitY[-1][1])/(OrbitY[0][0]-OrbitY[-1][0]))
+		#XpArr,YpArr = [],[]
+		#for i in range(len(OrbitX)):
+		#	if (OrbitX[i][0]-OrbitX[i-1][0]):
+		#		XpArr.append((OrbitX[i][1]-OrbitX[i-1][1])/(OrbitX[i][0]-OrbitX[i-1][0]))
+		#		YpArr.append((OrbitY[i][1]-OrbitY[i-1][1])/(OrbitY[i][0]-OrbitY[i-1][0]))
+		#	else:
+		#		XpArr.append((OrbitX[i-1][1]-OrbitX[i-2][1])/(OrbitX[i-1][0]-OrbitX[i-2][0]))
+		#		YpArr.append((OrbitY[i-1][1]-OrbitY[i-2][1])/(OrbitY[i-1][0]-OrbitY[i-2][0]))
+	
 		
 
 		(DispersionX, DispersionXP) = matrix_lattice.getRingDispersionDataX()
@@ -138,8 +141,11 @@ class Optics:
 					betaY = arrPosBetaY[j][1]
 					alphaY = arrPosAlphaY[j][1]
 					dmuy = DispersionYP[j][1]
-					x = OrbitX[j][1]
-					y = OrbitY[j][1]
+					#x =  OrbitX[j][1]
+					#y =  XpArr[j][1]
+					#xp = OrbitX[j][1]
+					#yp = YpArr[j][1]
+
 			if node.getType() == "quad teapot":
 				k1l = node.getParam("kq")*node.getLength()
 			else:
@@ -182,10 +188,10 @@ class Optics:
 			              [0.0,0.0,k1l,1.0,0.0,0.0],
 			              [0.0,0.0,0.0,0.0,1.0,0.0],
 			              [0.0,0.0,0.0,0.0,0.0,1.0]])
-			beamline[j].data['x'] = x # coordinate system ?????
-			beamline[j].data['y'] = y
-			beamline[j].data['xp'] = XpArr[j]
-			beamline[j].data['yp'] = YpArr[j]
+			#beamline[j].data['x'] = x # coordinate system ?????
+			#beamline[j].data['y'] = y
+			#beamline[j].data['xp'] = xp
+			#beamline[j].data['yp'] = yp
 
 		return beamline
 #------------------------------------------------------
@@ -312,7 +318,7 @@ class EnvelopeSolver:
 		Dx0=self.beamline[Nb-1].data['Dx']
 		Dxs0=self.beamline[Nb-1].data['Dpx']
 		# solver
-		sol = root(self.func_fsolve, [x0,xs0,y0,ys0,Dx0,Dxs0], args=(self.beamline,emitx,emity,sigma_p,Ksc),method='hybr')
+		sol = root(self.func_fsolve, [x0,xs0,y0,ys0,Dx0,Dxs0], args=(self.beamline,emitx,emity,sigma_p,Ksc),method='krylov')
 		x0=sol.x[0]
 		xs0=sol.x[1]
 		y0=sol.x[2]
@@ -390,15 +396,7 @@ class EnvelopeSolver:
 		alfx=-M[0,0]*M[1,0]*tw.data['betx']+(M[0,0]*M[1,1]+M[0,1]*M[1,0])*tw.data['alfx']-M[1,1]*M[0,1]*gamx0
 		gamx=M[1,0]**2*tw.data['betx']-2.0*M[1,1]*M[1,0]*tw.data['alfx']+M[1,1]**2*gamx0
 		gamy0=(1.0+tw.data['alfy']**2)/tw.data['bety']
-
-		tmp = tw.data['bety']
 		bety=M[2,2]**2*tw.data['bety']-2.0*M[2,2]*M[2,3]*tw.data['alfy']+M[2,3]**2*gamy0
-		#betx=M[0,0]**2*tw.data['betx']-2.0*M[0,0]*M[0,1]*tw.data['alfx']+M[0,1]**2*gamx0
-		
-		if bety<0.01:
-			print("FUUUUUUUUUUUUUUUUUUUUUUCK here we are {} alfa {}, name {}\nMsc {}".format(tmp, tw.data['alfy'], tw.data['keyword'],M))
-			bety*=-1
-
 		alfy=-M[2,2]*M[3,2]*tw.data['bety']+(M[2,2]*M[3,3]+M[2,3]*M[3,2])*tw.data['alfy']-M[3,3]*M[2,3]*gamy0
 		gamy=M[3,2]**2*tw.data['bety']-2.0*M[3,3]*M[3,2]*tw.data['alfy']+M[3,3]**2*gamy0
 		Dx=M[0,0]*tw.data['Dx']+M[0,1]*tw.data['Dpx']+M[0,5]
@@ -442,12 +440,17 @@ class EnvelopeSolver:
 			kick_gradient_x=0.5*Ksc/(ax*(ax+ay))*ds
 			kick_gradient_y=0.5*Ksc/(ay*(ax+ay))*ds
 
+			Msc[0,0]=1.0
+			Msc[0,1]=0.0
 			Msc[1,0]=kick_gradient_x
+			Msc[1,1]=1.0
+			Msc[2,2]=1.0
+			Msc[2,3]=0.0
 			Msc[3,2]=kick_gradient_y
+			Msc[3,3]=1.0
+
 	
 			# update tw0
-			
-
 			tw0=self.twiss_transport(Msc,tw0)     # space charge kick
 			twiss_vec[j,0]=tw0.data['betx']
 			twiss_vec[j,1]=tw0.data['alfx']
@@ -471,7 +474,7 @@ class EnvelopeSolver:
 		Dx0=self.beamline[-1].data['Dx']
 		Dxs0=self.beamline[-1].data['Dpx']
 		# solver
-		sol = root(self.func_fsolve_matrix, [x0,xs0,y0,ys0,Dx0,Dxs0], args=(Ksc,emitx,emity,sigma_p),method='hybr')
+		sol = root(self.func_fsolve_matrix, [x0,xs0,y0,ys0,Dx0,Dxs0], args=(Ksc,emitx,emity,sigma_p),method='lm')
 
 		# upd twiss
 		tw.data['betx']=sol.x[0]
