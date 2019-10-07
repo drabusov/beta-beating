@@ -7,7 +7,7 @@ import os
 import math
 
 # !!!!!
-import pandas as pd
+#import pandas as pd
 # !!!!!
 
 # import random number generators
@@ -1273,7 +1273,8 @@ class AddErrorSet():
         ringline = setDict["ringline"]
 	
 #--------------------------------------------------------- homemade errtab reading----------	
-	errDF = setDict["table"]
+	fname = paramsDict["filename"]	
+	errDF = readTable(fname)
 #--------------------------------------------------------- homemade errtab reading----------	
 	
         errnodecandidates = []
@@ -1338,31 +1339,58 @@ class AddErrorSet():
         tiny = 1.0e-07
         if not seed_value == "None":
             seed(seed_value)
-#	print(nodelist)
-#        for index in range(0, len(nodelist)):
-        for index, x in enumerate(nodelist):
-        	zi = nodelist[index][2] + tiny
-        	zf = nodelist[index][3] - tiny
-        	if(((positioni <= zf) and (zf <=  positionf)) or \
-        		((positioni <= zi) and (zi <=  positionf)) or \
-        		((zi <= positioni) and (positionf <= zf))):
-#        		AddErrorNode(lattice, zi, zf, paramsDict)
-#        		print "zi, zf = ", zi, zf
-			#print(lattice.getNodes()[x[0]].getName())
 
-			aux = errDF[errDF["*NAME"]==lattice.getNodes()[x[0]].getName().upper()]
-			if list(aux["*NAME"]):
-				dx, dy, k1l =float(list(aux["DX"])[0]), float(list(aux["DY"])[0]), float(list(aux["K1L"])[0])
-				paramsDict["dx"], paramsDict["dy"], paramsDict["fracerr"] = dx, dy, k1l
-				#print("fracerr = {}".format(paramsDict["fracerr"]))
-								
+	if paramsDict["sample"] == "ReadFromFile":
+	        for index, x in enumerate(nodelist):
+	        	zi = nodelist[index][2] + tiny
+	        	zf = nodelist[index][3] - tiny
+	        	if(((positioni <= zf) and (zf <=  positionf)) or \
+	        		((positioni <= zi) and (zi <=  positionf)) or \
+	        		((zi <= positioni) and (positionf <= zf))):
+				#aux = errDF[errDF["NAME"]==lattice.getNodes()[x[0]].getName().upper()]
 
-#				print(lattice.getNodes()[x[0]].getName())
-#				print(lattice.getNodes()[x[0]].getLength())
+				NodeName = lattice.getNodes()[x[0]].getName().upper()
+				names = [d['NAME'] for d in errDF]
+				if NodeName in names:
+					i_tab = names.index(NodeName)
+					aux = errDF[i_tab]
+					dx, dy, k1l =float(aux["DX"]), float(aux["DY"]), float(aux["K1L"])
+					paramsDict["dx"], paramsDict["dy"], paramsDict["fracerr"] = dx, dy, k1l
+					AddErrorNode(lattice, zi, zf, paramsDict)
 
+	else:
+	        for index in range(0, len(nodelist)):
+        		zi = nodelist[index][2] + tiny
+        		zf = nodelist[index][3] - tiny
+        		if(((positioni <= zf) and (zf <=  positionf)) or \
+        			((positioni <= zi) and (zi <=  positionf)) or \
+        			((zi <= positioni) and (positionf <= zf))):
+        			AddErrorNode(lattice, zi, zf, paramsDict)
 
-				AddErrorNode(lattice, zi, zf, paramsDict)
+#--------------------------------------------------------- homemade errtab reading----------	
 
+# reads errors from the MADX-like error Table 
+def readTable(fname):
+	print("start reading error table from the file {}".format(fname))
+
+	f = open(fname)
+	line=f.readline()
+	while line.find('* NAME')==-1:
+	    line=f.readline()
+
+	arr_keys = line.split()[1:]
+	line=f.readline()
+
+	out = []
+	while True:
+	    line=f.readline()
+	    if not line:
+		break
+	    line = line.split()
+	    tmp ={arr_keys[i]:x.strip('\"') for i,x in enumerate(line)}
+	    out.append(tmp)
+	print("reading is completed")
+	return out
 
 
 ######################################################################
