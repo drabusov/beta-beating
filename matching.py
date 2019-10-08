@@ -474,15 +474,20 @@ class EnvelopeSolver:
 		Dx0=self.beamline[-1].data['Dx']
 		Dxs0=self.beamline[-1].data['Dpx']
 		# solver
-		sol = root(self.func_fsolve_matrix, [x0,xs0,y0,ys0,Dx0,Dxs0], args=(Ksc,emitx,emity,sigma_p),method='lm')
+		sol=root(self.func_fsolve_matrix, [x0,xs0,y0,ys0,Dx0,Dxs0], args=(Ksc,emitx,emity,sigma_p),method='lm', options={'maxiter':10000})
 
 		# upd twiss
-		tw.data['betx']=sol.x[0]
-		tw.data['alfx']=sol.x[1]
-		tw.data['bety']=sol.x[2]
-		tw.data['alfy']=sol.x[3]
-		tw.data['Dx']=sol.x[4]
-		tw.data['Dpx']=sol.x[5]
+		if sol.success:
+			tw.data['betx']=sol.x[0]
+			tw.data['alfx']=sol.x[1]
+			tw.data['bety']=sol.x[2]
+			tw.data['alfy']=sol.x[3]
+			tw.data['Dx']=sol.x[4]
+			tw.data['Dpx']=sol.x[5]
+		else:
+			print("Sollution not found, try again")
+			x_start = sol.x # maybe it has been already close to convergence
+			sol=root(self.func_fsolve_matrix, x_start, args=(Ksc,emitx,emity,sigma_p),method='lm', options={'maxiter':20000})
 
 		twiss_vec=self.twiss_evolution(tw,Ksc,emitx,emity,sigma_p)
 		return twiss_vec
@@ -498,7 +503,7 @@ class EnvelopeSolver:
 		tw.data['Dpx']=x[5]
 
 		twiss_vec=self.twiss_evolution(tw,Ksc,emitx,emity,sigma_p)
-		return[twiss_vec[-1,0]-x[0],twiss_vec[-1,1]-x[1],twiss_vec[-1,2]-x[2],twiss_vec[-1,3]-x[3],twiss_vec[-1,4]-x[4],twiss_vec[-1,5]-x[5]]
+		return [twiss_vec[-1,0]-x[0],twiss_vec[-1,1]-x[1],twiss_vec[-1,2]-x[2],twiss_vec[-1,3]-x[3],twiss_vec[-1,4]-x[4],twiss_vec[-1,5]-x[5]]
 
 
 
