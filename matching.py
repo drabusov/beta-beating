@@ -477,17 +477,17 @@ class EnvelopeSolver:
 		sol=root(self.func_fsolve_matrix, [x0,xs0,y0,ys0,Dx0,Dxs0], args=(Ksc,emitx,emity,sigma_p),method='lm', options={'maxiter':10000})
 
 		# upd twiss
-		if sol.success:
-			tw.data['betx']=sol.x[0]
-			tw.data['alfx']=sol.x[1]
-			tw.data['bety']=sol.x[2]
-			tw.data['alfy']=sol.x[3]
-			tw.data['Dx']=sol.x[4]
-			tw.data['Dpx']=sol.x[5]
-		else:
+		if not sol.success:
 			print("Sollution not found, try again")
 			x_start = sol.x # maybe it has been already close to convergence
 			sol=root(self.func_fsolve_matrix, x_start, args=(Ksc,emitx,emity,sigma_p),method='lm', options={'maxiter':20000})
+
+		tw.data['betx']=sol.x[0]
+		tw.data['alfx']=sol.x[1]
+		tw.data['bety']=sol.x[2]
+		tw.data['alfy']=sol.x[3]
+		tw.data['Dx']=sol.x[4]
+		tw.data['Dpx']=sol.x[5]
 
 		twiss_vec=self.twiss_evolution(tw,Ksc,emitx,emity,sigma_p)
 		return twiss_vec
