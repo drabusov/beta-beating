@@ -268,24 +268,15 @@ class StringFunctions:
 		str_out = re.sub("\.e",".0e",str_in)
 		#check the math operatons
 		str_out = re.sub("sin\(","math.sin(",str_out)
-		str_out = re.sub("SIN\(","math.sin(",str_out)
 		str_out = re.sub("cos\(","math.cos(",str_out)
-		str_out = re.sub("COS\(","math.cos(",str_out)
 		str_out = re.sub("tan\(","math.tan(",str_out)
-		str_out = re.sub("TAN\(","math.tan(",str_out)
 		str_out = re.sub("exp\(","math.exp(",str_out)
-		str_out = re.sub("EXP\(","math.exp(",str_out)
 		str_out = re.sub("log\(","math.log(",str_out)
-		str_out = re.sub("LOG\(","math.log(",str_out)
 		str_out = re.sub("acos\(","math.acos(",str_out)
-		str_out = re.sub("ACOS\(","math.acos(",str_out)
 		str_out = re.sub("asin\(","math.asin(",str_out)
-		str_out = re.sub("ASIN\(","math.asin(",str_out)
 		str_out = re.sub("atan\(","math.atan(",str_out)
-		str_out = re.sub("ATAN\(","math.atan(",str_out)
 		str_out = re.sub("sqrt\(","math.sqrt(",str_out)
-		str_out = re.sub("SQRT\(","math.sqrt(",str_out)
-		str_out = re.sub("PI","math.pi",str_out)
+		str_out = re.sub("pi","math.pi",str_out)
 		return str_out
 
 	replaceMath = classmethod(replaceMath)
@@ -337,8 +328,7 @@ class MADX_Parser:
 		for str in self._madxLines:
 			loc_flag_elem = True
 			#take off the ";" at end of each line
-			str0 = str
-			str0 = "".join(("".join(str.split("const "))).split()) # remove "const" from var definitions! remove all spaces!
+			str0 = "".join(("".join(str[:].lower().split("const "))).split()) # remove "const" from var definitions! remove all spaces!
 			if str0.rfind(";") > 0:
 				str_local = ""
 				for i in xrange(str0.rfind(";")):
@@ -383,11 +373,21 @@ class MADX_Parser:
 
 			if re.search(r'[\w]* *:.*',str_local):
 				if(str_local.rfind("sequence") >=0):
+
+					localValDict =self.calculateVariables() # all variables are ready, now we can recalculate them  
+
 					tokens = str_local.split(":") # is it possible to have more than two tokens here?
 					self._sequencename = tokens[0]
-					tmp_str = ":".join(tokens[1:])
+					tmp_str = ":".join(tokens[1:]).lower()
 					aux = [x.split("l=")[-1] for x in tmp_str.split(",") if "l=" in x]
 					self._sequencelength = eval(aux[0])
+					aux = [x.split("refer=")[-1] for x in tmp_str.split(",") if "refer=" in x]
+					if not aux:
+						elementRefer = "centre"
+					else:
+						elementRefer = aux[0]
+					print(elementRefer)
+
 				else:
 					if ":=" in str_local and "at=" not in str_local:
 						if ":" not in str_local.split(":=")[0]:
@@ -433,7 +433,7 @@ class MADX_Parser:
 	
 				latt_elem = self._accElemDict[elem_name]
 				# he have the element, let's replace variables in parameters by numerical values here
-				latt_elem = self.recalculateParameters(latt_elem)
+				latt_elem = self.recalculateParameters(latt_elem,localValDict)
 				#print("NAME {} POSITION {} LEN {}".format(elem_name,position,latt_elem.getParameter("l")))
 
 				length = latt_elem.getParameter("l") # check, if the length can be a variable
@@ -457,7 +457,7 @@ class MADX_Parser:
 #					self._sequencelist.append(latt_aper_exit)
 #					aper_warning = aper_warning + 2
 #				else:
-				latt_drift = self.makeDrift(latt_elem)
+				latt_drift = self.makeDrift(latt_elem,elementRefer)
 				self._sequencelist.append(latt_drift)
 				self._sequencelist.append(latt_elem)
 
@@ -481,52 +481,9 @@ class MADX_Parser:
 			latt_drift.addParameter("l", endlength)
 			self._sequencelist.append(latt_drift)
 
-		for x in self._sequencelist:
-			if x.getType()!="drift":
-				print("{} {}".format(x.getName(),x.getParameter("position")))
 
-
-#	def calculateVariables(self):
-	def recalculateParameters(self,accElem):
-		name = accElem.getName()
-		#print("CALCULATION OF PARAMS, ELEMENT NAME: {}".format(name))
-		#-----------------------------------------------
-		#replace all elem[key] substrings in elements by
-		#variables
-		#-----------------------------------------------
-		accElemDictInit = self._accElemDict.copy()
-		accElemDictCp = self._accElemDict.copy()
-		doNotStop = True
-		while(doNotStop):
-			doNotStop = False
-			kvs = accElem.getParameters()
-			#print(kvs)
-			for key,val in kvs.iteritems():
-				if val != None:
-					#print("getElementKeys, elem name {}".format(name))
-					tmp = "{}".format(val)
-					if not tmp.split(","):
-						resArr = StringFunctions.getElementKeys(tmp)
-					else:
-						resArr = []
-						for x in tmp.split(","):
-							resArr += StringFunctions.getElementKeys(x)
-					if(len(resArr) == 0 and accElemDictInit.has_key(name)):
-						del accElemDictInit[name]
-					for [el,k] in resArr:
-						#print("resArr {}".format(resArr))
-						doNotStop = True
-						accElemInside = accElemDictCp[el]
-						replVal = accElemInside.getParameters()[k]
-						val = StringFunctions.replaceElementKeys(val,el,k,replVal)
-				kvs[key] = val
-		if(len(accElemDictCp) == len(accElemDictInit)):
-			print "=========== Unresolved AccElements============"
-			#for name,accElem in accElemDictCp.iteritems():
-			#	print "name=",name,"  params=",accElem.getParameters()
-			print "=========== MADX File Problem ==============="
-			print "=================STOP======================="
-			sys.exit(1)
+	def calculateVariables(self):
+		print("calculateVariables")
 		#---------------------------------------------------------
 		#Now let's substitute elements parameters in variables' expression.
 		#---------------------------------------------------------
@@ -574,6 +531,48 @@ class MADX_Parser:
 				print "=================STOP======================="
 				sys.exit(1)
 
+		return localValDict
+
+	def recalculateParameters(self,accElem,localValDict):
+		name = accElem.getName()
+		#print("CALCULATION OF PARAMS, ELEMENT NAME: {}".format(name))
+		#-----------------------------------------------
+		#replace all elem[key] substrings in element by
+		#variables
+		#-----------------------------------------------
+		accElemDictInit = self._accElemDict.copy()
+		accElemDictCp = self._accElemDict.copy()
+		doNotStop = True
+		while(doNotStop):
+			doNotStop = False
+			kvs = accElem.getParameters()
+			#print(kvs)
+			for key,val in kvs.iteritems():
+				if val != None:
+					#print("getElementKeys, elem name {}".format(name))
+					tmp = "{}".format(val)
+					if not tmp.split(","):
+						resArr = StringFunctions.getElementKeys(tmp)
+					else:
+						resArr = []
+						for x in tmp.split(","):
+							resArr += StringFunctions.getElementKeys(x)
+					if(len(resArr) == 0 and accElemDictInit.has_key(name)):
+						del accElemDictInit[name]
+					for [el,k] in resArr:
+						#print("resArr {}".format(resArr))
+						doNotStop = True
+						accElemInside = accElemDictCp[el]
+						replVal = accElemInside.getParameters()[k]
+						val = StringFunctions.replaceElementKeys(val,el,k,replVal)
+				kvs[key] = val
+		if(len(accElemDictCp) == len(accElemDictInit)):
+			print "=========== Unresolved AccElements============"
+			#for name,accElem in accElemDictCp.iteritems():
+			#	print "name=",name,"  params=",accElem.getParameters()
+			print "=========== MADX File Problem ==============="
+			print "=================STOP======================="
+			sys.exit(1)
 
 		#-------------------------------------------
 		# Now calculate all parameters in key,string_value
@@ -597,7 +596,7 @@ class MADX_Parser:
 				if out:
 					accElem.getParameters()[key] = out
 				if(not res):
-					print "=============MAD File problem ==============",
+					print "=============MADX File problem ==============",
 					print "Problem with acc. element:",accElem.getName()
 					print "Parameter name:",key
 					print "Can not calculate string:",val
@@ -609,10 +608,23 @@ class MADX_Parser:
 		
 						
 		
-	def makeDrift(self, downstreamelem):
+	def makeDrift(self, downstreamelem,elementRefer):
 	
 		# Now we have to create a drift between elements 
+		if elementRefer == "entry":
+			refer = [1.0,0.0]
+		if elementRefer == "centre":
+			refer = [0.5,0.5]
+		if elementRefer == "exit":
+			refer = [0.0,1.0]
 
+		if len([x for x in ("entry","centre","exit") if x == elementRefer]) !=1:
+			print "=============MADX File problem ==============",
+			print "Problem with sequence, refer is:",elementRefer
+			print "Refer has to be one of :", ("entry","centre","exit")
+			print "============ STOP =========================="
+			sys.exit(1)		
+	
 		seqlength = len(self._sequencelist)
 		lenUp = 0.0 # upstream
 		lenDown = 0.0 # downstream
@@ -624,11 +636,12 @@ class MADX_Parser:
 			lenUp = upstreamelem.getParameter("l")
 			lenDown = downstreamelem.getParameter("l")
 			posUp = upstreamelem.getParameter("position")
-			print("drift betweed {} and {} is:".format(downstreamelem.getName(),upstreamelem.getName()))
+			#print("drift betweed {} and {} is:".format(downstreamelem.getName(),upstreamelem.getName()))
 		posDown = downstreamelem.getParameter("position")
-		driftlength = posDown - posUp - 0.5*(lenUp+lenDown)
-		print(driftlength)
-		print("{} positionDown {} positionUp {}".format(downstreamelem.getName(),posDown,posUp))
+		driftlength = posDown - posUp - refer[0]*lenUp -refer[1]*lenDown
+		#print(driftlength)
+		#print("{} positionDown {} positionUp {}".format(downstreamelem.getName(),posDown,posUp))
+		#print("lenDown {} lenUp {}".format(lenDown,lenUp))		
 
 		name = "Drift"# + "_" + str(seqlength)
 		type = "drift"
@@ -650,9 +663,9 @@ class MADX_Parser:
 			Method. It finds all parameters and applies to the existing element.
 		"""
 		length = 0.0
-		strength = 0.0
+		strength = 0.0 
 		# search for knl, ksl, APERTURE, ...  !! :={} or = {}
-		line_tmp = line_init 
+		line_tmp = line_init[:]
 		if "{" in line_init and "}" in line_init:
 
 			line_init =line_init.replace("}", "!{")
@@ -708,6 +721,7 @@ class MADX_Parser:
 
 		#Make sure there is always a length parameter.
 		if(lattElem.hasParameter("l")==0):
+			#print("NO LEN PARAMETER DEFINED!! ELEMENT IS {}".format(lattElem.getName()))
 #			lattElem.addParameter("l",0.0)
 			lattElem.addParameter("l","0.0")
 				
@@ -743,8 +757,6 @@ class MADX_Parser:
 			type_upd = "monitor"
 		if "kicker" in type_upd.lower():
 			type_upd = "kicker"
-		if "dipedge" in type_upd.lower(): # multipole or quad?
-			type_upd = "drift"
 		if "elseparator" in type_upd.lower():
 			type_upd = "marker"
 		if "instrument" in type_upd.lower():

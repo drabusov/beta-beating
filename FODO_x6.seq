@@ -1,0 +1,111 @@
+! *********************************************************************
+! Definition of parameters
+! *********************************************************************
+
+l_cell=100;
+quadrupoleLenght=5.0;
+f=30;
+//kf:=1/f/quadrupoleLenght;// m^-2
+//kd:=-kf*101/100;// m^-2
+
+kf:=6.77407e-03;
+kd:=-6.54921e-03;
+
+kn0_corr_00 := 0;
+kn0_corr_01 := 0;
+kn0_corr_10 := 0;
+kn0_corr_11 := 0;
+kn0_corr_20 := 0;
+kn0_corr_21 := 0;
+kn0_corr_30 := 0;
+kn0_corr_31 := 0;
+kn0_corr_40 := 0;
+kn0_corr_41 := 0;
+kn0_corr_50 := 0;
+kn0_corr_51 := 0;
+
+kn1_corr_00 :=0;
+kn1_corr_01 :=0;
+kn1_corr_10 :=0;
+kn1_corr_11 :=0;
+kn1_corr_20 :=0;
+kn1_corr_21 :=0;
+kn1_corr_30 :=0;
+kn1_corr_31 :=0;
+kn1_corr_40 :=0;
+kn1_corr_41 :=0;
+kn1_corr_50 :=0;
+kn1_corr_51 :=0;
+
+! *********************************************************************
+! Definition of magnet
+! ********************************************************************* 
+MH: sbend,l:= 1.2*PI/3,angle:= PI/3;
+!MH: drift,l:= 1.2*PI/3;
+
+QF: quadrupole, L=quadrupoleLenght, K1:=kf;
+QD: quadrupole, L=quadrupoleLenght, K1:=kd;
+
+CORR: HKICKER, L=1;
+CORR_QD: MULTIPOLE;
+BPM: MONITOR, L=1;
+
+! *********************************************************************
+! Definition of sequence
+! *********************************************************************
+FODO:sequence, refer=entry, L=6*100;
+CELLA0: marker, 					    at = 0;
+CORR_KN0_00: CORR, hkick :=kn0_corr_00,from=CELLA0,         at=  1;
+MH0: MH, from=CELLA0,         				    at=  3;
+QF0: QF,from=CELLA0,                                        at= 10;
+CORR_KN1_00: CORR_QD, knl:={0,kn1_corr_00},from=CELLA0,     at= 30;
+CORR_KN0_01: CORR, hkick :=kn0_corr_01,from=CELLA0,         at= 50;
+QD0: QD,from=CELLA0,                                        at= 60;
+BPM0: BPM,from=CELLA0,                                      at= 75;
+CORR_KN1_01: CORR_QD, knl:={0,kn1_corr_01},from=CELLA0,     at= 90;
+CELLA1: marker,					            at=100;
+CORR_KN0_10: CORR, hkick :=kn0_corr_10,from=CELLA1,         at=1;
+MH1: MH, from=CELLA1,         				    at= 3;
+QF1: QF,from=CELLA1,                                        at=10;
+CORR_KN1_10: CORR_QD, knl:={0,kn1_corr_10},from=CELLA1,     at=30;
+CORR_KN0_11: CORR, hkick :=kn0_corr_11, from=CELLA1,        at=50;
+QD1: QD,from=CELLA1,                                        at=60;
+BPM1: BPM,from=CELLA1,                                      at=75;
+CORR_KN1_11: CORR_QD, knl:={0,kn1_corr_11},from=CELLA1,     at=90;
+CELLA2: marker,					            at=200;
+CORR_KN0_20: CORR, hkick :=kn0_corr_20,from=CELLA2,         at=1;
+MH2: MH, from=CELLA2,         				    at= 3;
+QF2: QF,from=CELLA2,                                        at=10;
+CORR_KN1_20: CORR_QD, knl:={0,kn1_corr_20},from=CELLA2,     at=30;
+CORR_KN0_21: CORR, hkick :=kn0_corr_21,from=CELLA2,         at=50;
+QD2: QD,from=CELLA2,                                        at=60;
+BPM2: BPM,from=CELLA2,                                      at=75;
+CORR_KN1_21: CORR_QD, knl:={0,kn1_corr_21},from=CELLA2,     at=90;
+CELLA3: marker,					            at=300;
+CORR_KN0_30: CORR, hkick :=kn0_corr_30,from=CELLA3,         at=1;
+MH3: MH, from=CELLA3,         				    at= 3;
+QF3: QF,from=CELLA3,                                        at=10;
+CORR_KN1_30: CORR_QD, knl:={0,kn1_corr_30},from=CELLA3,     at=30;
+CORR_KN0_31: CORR, hkick :=kn0_corr_31,from=CELLA3,         at=50;
+QD3: QD,from=CELLA3,                                        at=60;
+BPM3: BPM,from=CELLA3,                                      at=75;
+CORR_KN1_31: CORR_QD, knl:={0,kn1_corr_31},from=CELLA3,     at=90;
+CELLA4: marker,					            at=400;
+CORR_KN0_40: CORR, hkick :=kn0_corr_40,from=CELLA4,         at=1;
+MH4: MH, from=CELLA4,         				    at= 3;
+QF4: QF,from=CELLA4,                                        at=10;
+CORR_KN1_40: CORR_QD, knl:={0,kn1_corr_40},from=CELLA4,     at=30;
+CORR_KN0_41: CORR, hkick :=kn0_corr_41,from=CELLA4,         at=50;
+QD4: QD,from=CELLA4,                                        at=60;
+BPM4: BPM,from=CELLA4,                                      at=75;
+CORR_KN1_41: CORR_QD, knl:={0,kn1_corr_41},from=CELLA4,     at=90;
+CELLA5: marker,					            at=500;
+CORR_KN0_50: CORR, hkick :=kn0_corr_50,from=CELLA5,         at=1;
+MH5: MH, from=CELLA5,         				    at= 3;
+QF5: QF,from=CELLA5,                                        at=10;
+CORR_KN1_50: CORR_QD, knl:={0,kn1_corr_50},from=CELLA5,     at=30;
+CORR_KN0_51: CORR, hkick :=kn0_corr_51,from=CELLA5,         at=50;
+QD5: QD,from=CELLA5,                                        at=60;
+BPM5: BPM,from=CELLA5,                                      at=75;
+CORR_KN1_51: CORR_QD, knl:={0,kn1_corr_51},from=CELLA5,     at=90;
+endsequence;
