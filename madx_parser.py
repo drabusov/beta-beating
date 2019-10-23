@@ -27,12 +27,18 @@ class _possibleElementType:
 		self.__names_type.append("kicker")
 		self.__names_type.append("hkicker")
 		self.__names_type.append("vkicker")
+		self.__names_type.append("tkicker") # !!
 		self.__names_type.append("hkick")
 		self.__names_type.append("vkick")
 		self.__names_type.append("rfcavity")
-		self.__names_type.append("rcollimator")
+		self.__names_type.append("rcollimator") # R collimator?  
+		self.__names_type.append("collimator")
 		self.__names_type.append("marker")
 		self.__names_type.append("monitor")
+		self.__names_type.append("hmonitor") # !!
+		self.__names_type.append("vmonitor") # !!
+		self.__names_type.append("dipedge") # !!
+		self.__names_type.append("elseparator") # !!
 	
 	def __del__(self):
 		"""
@@ -121,8 +127,8 @@ class MADX_LattElement:
 	
 	def getParameters(self):
 		"""
-			Method. Returns parameter dictionary.
-			"""
+		Method. Returns parameter dictionary.
+		"""
 		return self.__par
 	
 	def getElements(self):
@@ -196,9 +202,93 @@ class _variable:
 			s_name  = re.findall(patt,line_init)
 			s_val  = s_val[0]
 			s_name = s_name[0]
+		if "." in s_name:
+			s_name = "".join(s_name.split("."))
+
 		self.setName(s_name)
 		self.setExpression(s_val)
 
+#====================================================================
+class StringFunctions:
+	"""
+	This class defines the set of static string functions.
+	"""
+
+	def replaceElementKeys(self, str_in, elem, key, value):
+		"""
+		Method. It will replace elem[key] in the string expression of this variable.
+		"""
+		new_val = r'(' + str(value) + r')'
+		s = elem+r'\['+key+r'\]'
+		patt = re.compile(s)
+		str_out = re.sub(patt,new_val,str_in)
+		return str_out
+
+	replaceElementKeys = classmethod(replaceElementKeys)
+
+	def getElementKeys(self, str_in):
+		"""
+		Method. It returns the set of [element,key] pairs for input string.
+		"""
+		#print("{} {}".format(str_in, type(str_in)))
+		res = []
+		patt=re.compile(r'[\w]*\[[\w]*\]')
+		s_name_key = re.findall(patt,str_in)
+		if len(s_name_key) == 0:
+			return res
+		patt_elem = re.compile(r'[\w]*(?=\[)')
+		patt_key = re.compile(r'(?<=\[)[\w]*(?=\])')
+		for s in s_name_key:
+			elem = re.findall(patt_elem,s)[0]
+			key = re.findall(patt_key,s)[0]
+			res.append([elem,key])
+		return res
+
+	getElementKeys = classmethod(getElementKeys)
+
+	def calculateString(self, str_in, localDict):
+		"""
+		Method. It returns a tuple (True,value) if
+		the expression can be evaluated and (False,None) otherwise.
+		"""
+		try:
+			val = eval(str_in,globals(),localDict)
+			return (True, val)
+		except:
+			return (False, None)
+
+	calculateString = classmethod(calculateString)
+
+	def replaceMath(self, str_in):
+		"""
+		Method. It replaces math symbols
+		to make them readable for python eval().
+		"""
+		#replace .e by .0e
+		str_out = re.sub("\.e",".0e",str_in)
+		#check the math operatons
+		str_out = re.sub("sin\(","math.sin(",str_out)
+		str_out = re.sub("SIN\(","math.sin(",str_out)
+		str_out = re.sub("cos\(","math.cos(",str_out)
+		str_out = re.sub("COS\(","math.cos(",str_out)
+		str_out = re.sub("tan\(","math.tan(",str_out)
+		str_out = re.sub("TAN\(","math.tan(",str_out)
+		str_out = re.sub("exp\(","math.exp(",str_out)
+		str_out = re.sub("EXP\(","math.exp(",str_out)
+		str_out = re.sub("log\(","math.log(",str_out)
+		str_out = re.sub("LOG\(","math.log(",str_out)
+		str_out = re.sub("acos\(","math.acos(",str_out)
+		str_out = re.sub("ACOS\(","math.acos(",str_out)
+		str_out = re.sub("asin\(","math.asin(",str_out)
+		str_out = re.sub("ASIN\(","math.asin(",str_out)
+		str_out = re.sub("atan\(","math.atan(",str_out)
+		str_out = re.sub("ATAN\(","math.atan(",str_out)
+		str_out = re.sub("sqrt\(","math.sqrt(",str_out)
+		str_out = re.sub("SQRT\(","math.sqrt(",str_out)
+		str_out = re.sub("PI","math.pi",str_out)
+		return str_out
+
+	replaceMath = classmethod(replaceMath)
 #====================================================================
 
 class MADX_Parser:
@@ -206,6 +296,7 @@ class MADX_Parser:
 	
 	def __init__(self):
 		""" Create instance of the MAD_Parser class """
+		self._madxLines = [] # lines of madx file-(s)
 		self._accElemDict = {}
 		self._varDict = {} # dict of variables
 		self._sequencename = ""
@@ -214,26 +305,40 @@ class MADX_Parser:
 		#the lines to ignore will start with these words
 		self.__ingnoreWords = ["title","beam", "none"]
 
+	def collect_madx_lines(self,fileName,madFilePath):
+
+		#1-st stage read MAD file into the lines array
+		#the initialize can be recursive if there are nested MADX files
+		fl = open(os.path.join(madFilePath, fileName))
+
+		for stg in fl:
+			if "call" in stg.lower() and "file" in stg.lower():
+				new_file = self._parseNestedFileLine(stg)
+				print("NESTED FILE")
+				self.collect_madx_lines(new_file,self.madxFilePath)
+			else:
+				self._madxLines.append(stg)
+
+		
+
 	def parse(self,MADXfileName):
 		
 		self.__init__()
 		
-		#1-st stage read MAD file into the lines array
-		self.__madFilePath = os.path.dirname(MADXfileName)
-		fileName = os.path.basename(MADXfileName)
-		#the initialize can be recursive if there are nested MAD files
-		fl = open(os.path.join(self.__madFilePath, fileName))
 		str_local = ""
 		aper_warning = 0
 
-		for str in fl.readlines():
+		self.madxFilePath = os.path.dirname(MADXfileName)
+		fileName = os.path.basename(MADXfileName)
+
+		self.collect_madx_lines(fileName,self.madxFilePath)
+
+
+		for str in self._madxLines:
 			loc_flag_elem = True
-			#print str
 			#take off the ";" at end of each line
-			#print str
-			
 			str0 = str
-			str0 = "".join(str.split()) # remove all spaces!
+			str0 = "".join(("".join(str.split("const "))).split()) # remove "const" from var definitions! remove all spaces!
 			if str0.rfind(";") > 0:
 				str_local = ""
 				for i in xrange(str0.rfind(";")):
@@ -243,11 +348,39 @@ class MADX_Parser:
 			if str.find("!") == 0:
 				str_local = ""
 				continue
+			#check if the line is a comment
+			if str.find("//") == 0:
+				str_local = ""
+				continue
+
 			#check the empty line
 			if str == "":
 				str_local = ""
 				continue
-			#Parse element/variable/sequence definition. 
+
+			
+			#Parse element/variable":="/sequence definition.  !! parse refer !!
+			if "=" in str_local and ":" not in str_local.split("=")[0]: # here we avoid the variable parsing twice 
+				loc_flag_elem = False # in order to avoid the parsing as an element
+				if "at=" not in str_local:
+					# we have a MADX variable here!
+					#print("variable = {}".format(str_local))
+					var = _variable()
+					var.parseLine(str_local)
+					self._varDict[var.getName()] = var
+				else:
+					# we have the defined elem with additional params at the positioning !! not a variable, but can't be parsed as an elem !!
+					tokens = str_local.split(",")
+					name = tokens[0]
+					#print(str_local)
+					elem_tmp = self._accElemDict[name]
+					elem = self.parseParameters(str_local,elem_tmp)	
+					#print(elem_tmp.getParameters())		
+					#print(elem.getParameters())		
+
+				#print("variable/add_params {} FLAG {}".format(str_local, loc_flag_elem))
+
+
 			if re.search(r'[\w]* *:.*',str_local):
 				if(str_local.rfind("sequence") >=0):
 					tokens = str_local.split(":") # is it possible to have more than two tokens here?
@@ -256,63 +389,80 @@ class MADX_Parser:
 					aux = [x.split("l=")[-1] for x in tmp_str.split(",") if "l=" in x]
 					self._sequencelength = eval(aux[0])
 				else:
-					print(str_local, loc_flag_elem)
-					if ":=" in str_local:
-						if ":" not in str_local.split(":="):
-							# we have a MADX variable here! 
+					if ":=" in str_local and "at=" not in str_local:
+						if ":" not in str_local.split(":=")[0]:
+							# we have a MADX variable here!
+							#print("variable string := {}".format(str_local)) 
 							var = _variable()
 							var.parseLine(str_local)
 							self._varDict[var.getName()] = var
-							loc_flag_elem = False # in order to avoid the parsing of element
-#----------------------------------------------------------------------------------
+							loc_flag_elem = False # in order to avoid the parsing as an element
+					# element parsing
 					if loc_flag_elem:
-						if "at=" in str_local:
+						if "at=" in str_local: 
 							tokens = str_local.split(",") 
 							tmp = ",".join([x for x in tokens if "at=" not in x]) # remove location from the string (is it necessary?)
 						else:
 							tmp = str_local
+						#print("tmp str {} FLAG {}".format(tmp,loc_flag_elem))
 						elem = self.parseElem(tmp) # elem can be defined directly at the location!
+						#print("NAME {}".format(elem.getName()))
 						self._accElemDict[elem.getName()] = elem
-			#Add elements to the sequence list.
-			if(str_local.rfind("at") >= 0):
+
+			#Add elements to the sequence list (and secondary elem params to an elem).
+			# if the positioning started, we can't have any variable definition (can we?)
+			# we can have the definition of elements at the locations 
+			if(str_local.rfind("at=") >= 0):
 				if(self._sequencename==""):
 					print "Warning, adding elements to sequence with no name."
-
-				if ":" not in str_local:			
-					tokens = str_local.split(",") # it can cause problems with {.,.} def inside the line
-					elem_name = tokens[0]	# elem name 100% is the first position, otherwise user did a mistake
+				if "," in str_local.split(":")[0]:
+					#print("str_local {}".format(str_local))			
+					tokens = str_local.split(",") 
+					elem_name = tokens[0]	# elem name 100% is the first position, otherwise the user did a mistake
 					tmp = tokens[1:]
 					aux = [x.split("at=")[-1] for x in tmp if "at=" in x]				
 					position = eval(aux[0]) 
-
-				else:		
-					tokens = str_local.split(":") 
-					elem_name = tokens[0]	# elem name 100% is the first position, otherwise user did a mistake
+				else:	
+					tokens = str_local.split(":")
+					elem_name = tokens[0]	
 					tmp_str = "".join(tokens[1:])
-					tmp = tmp_str.split(",")  # it can cause problems with {.,.} def inside the line
-					aux = [x.split("at=")[-1] for x in tmp if "at=" in x]				
+					tmp = tmp_str.split(",") 
+					aux = [x.split("at=")[-1] for x in tmp if "at=" in x]
+					#print([x.split("at=")[-1] for x in tmp])				
 					position = eval(aux[0]) 
-					
+	
 				latt_elem = self._accElemDict[elem_name]
-				length = float(latt_elem.getParameter("l"))
-				latt_elem.addParameter("position", position)
-				if(latt_elem.hasParameter("apertype")!=0):
-					latt_aper_entry = self.makeAperture(latt_elem)
-					latt_aper_entry.addParameter("position", position-length/2.0)
-					latt_aper_exit = self.makeAperture(latt_elem)
-					latt_aper_exit.addParameter("position", position+length/2.0)
-					latt_drift = self.makeDrift(latt_elem)
-					self._sequencelist.append(latt_drift)
-					self._sequencelist.append(latt_aper_entry)
-					self._sequencelist.append(latt_elem)
-					self._sequencelist.append(latt_aper_exit)
-					aper_warning = aper_warning + 2
-				else:
-					latt_drift = self.makeDrift(latt_elem)
-					self._sequencelist.append(latt_drift)
-					self._sequencelist.append(latt_elem)
+				# he have the element, let's replace variables in parameters by numerical values here
+				latt_elem = self.recalculateParameters(latt_elem)
+				#print("NAME {} POSITION {} LEN {}".format(elem_name,position,latt_elem.getParameter("l")))
 
-		print(self._varDict.keys())
+				length = latt_elem.getParameter("l") # check, if the length can be a variable
+
+				if "from" in latt_elem.getParameters().keys():
+					#print("nested sequence")
+					refer_elem_name = latt_elem.getParameter("from")
+					refer_elem = self._accElemDict[refer_elem_name]
+					position += refer_elem.getParameter("position")
+
+				latt_elem.addParameter("position", position)
+#				if(latt_elem.hasParameter("apertype")!=0):
+#					latt_aper_entry = self.makeAperture(latt_elem)
+#					latt_aper_entry.addParameter("position", position-length/2.0)
+#					latt_aper_exit = self.makeAperture(latt_elem)
+#					latt_aper_exit.addParameter("position", position+length/2.0)
+#					latt_drift = self.makeDrift(latt_elem)
+#					self._sequencelist.append(latt_drift)
+#					self._sequencelist.append(latt_aper_entry)
+#					self._sequencelist.append(latt_elem)
+#					self._sequencelist.append(latt_aper_exit)
+#					aper_warning = aper_warning + 2
+#				else:
+				latt_drift = self.makeDrift(latt_elem)
+				self._sequencelist.append(latt_drift)
+				self._sequencelist.append(latt_elem)
+
+		print("all variables found {}".format(self._varDict.keys()))
+
 		if aper_warning >= 1:
 			print "Warning, adding", aper_warning ,"aperture nodes to the teapot lattice. That will slow down the simluation."
 			print "If the lost of particles on the aperture is not necessary, please use a madx file without the aperture labels."
@@ -331,37 +481,162 @@ class MADX_Parser:
 			latt_drift.addParameter("l", endlength)
 			self._sequencelist.append(latt_drift)
 
+		for x in self._sequencelist:
+			if x.getType()!="drift":
+				print("{} {}".format(x.getName(),x.getParameter("position")))
+
+
+#	def calculateVariables(self):
+	def recalculateParameters(self,accElem):
+		name = accElem.getName()
+		#print("CALCULATION OF PARAMS, ELEMENT NAME: {}".format(name))
+		#-----------------------------------------------
+		#replace all elem[key] substrings in elements by
+		#variables
+		#-----------------------------------------------
+		accElemDictInit = self._accElemDict.copy()
+		accElemDictCp = self._accElemDict.copy()
+		doNotStop = True
+		while(doNotStop):
+			doNotStop = False
+			kvs = accElem.getParameters()
+			#print(kvs)
+			for key,val in kvs.iteritems():
+				if val != None:
+					#print("getElementKeys, elem name {}".format(name))
+					tmp = "{}".format(val)
+					if not tmp.split(","):
+						resArr = StringFunctions.getElementKeys(tmp)
+					else:
+						resArr = []
+						for x in tmp.split(","):
+							resArr += StringFunctions.getElementKeys(x)
+					if(len(resArr) == 0 and accElemDictInit.has_key(name)):
+						del accElemDictInit[name]
+					for [el,k] in resArr:
+						#print("resArr {}".format(resArr))
+						doNotStop = True
+						accElemInside = accElemDictCp[el]
+						replVal = accElemInside.getParameters()[k]
+						val = StringFunctions.replaceElementKeys(val,el,k,replVal)
+				kvs[key] = val
+		if(len(accElemDictCp) == len(accElemDictInit)):
+			print "=========== Unresolved AccElements============"
+			#for name,accElem in accElemDictCp.iteritems():
+			#	print "name=",name,"  params=",accElem.getParameters()
+			print "=========== MADX File Problem ==============="
+			print "=================STOP======================="
+			sys.exit(1)
+		#---------------------------------------------------------
+		#Now let's substitute elements parameters in variables' expression.
+		#---------------------------------------------------------
+		for name,var in self._varDict.iteritems():
+			val = var.getExpression()
+			resArr = StringFunctions.getElementKeys(val)
+			for [el,k] in resArr:
+				accElemInside = accElemDictInit[el]
+				replVal = accElemInside.getParameters()[k]
+				val = StringFunctions.replaceElementKeys(val,el,k,replVal)
+			var.setExpression(val)
+		#-----------------------------------------------
+		#now let's calculate all variables
+		#-----------------------------------------------
+		#replace all math cos,sin, etc by math.cos, math.sin, etc
+		for name,var in self._varDict.iteritems():
+			val = var.getExpression()
+			val = StringFunctions.replaceMath(val)
+			var.setExpression(val)
+		#Then let's calculate numerical values.
+		#They can be defined recursivelly, so we need iterations
+		accVarDict = {}
+		for name,var in self._varDict.iteritems():
+			accVarDict[var.getName()] = var
+		localValDict = {}
+		doNotStop = True
+		while(doNotStop):
+			doNotStop = False
+			accVarDictInner = accVarDict.copy()
+			#print "debug variables dict. size=",len(accVarDictInner)
+			for name,var in accVarDictInner.iteritems():
+				str_in = var.getExpression()
+				res,val = StringFunctions.calculateString(str_in.lower(),localValDict)
+				if(res):
+					localValDict[name.lower()] = val
+					var.setValue(val)
+					del accVarDict[name]
+				else:
+					doNotStop = True
+			if(len(accVarDictInner) == len(accVarDict) and len(accVarDict) > 0):
+				print "=========== Unresolved Variables============"
+				for name,var in accVarDictInner.iteritems():
+					print "name=",name,"  str=",var.getExpression()
+				print "=========== MADX File Problem ==============="
+				print "=================STOP======================="
+				sys.exit(1)
+
+
+		#-------------------------------------------
+		# Now calculate all parameters in key,string_value
+		# for accelerator elements
+		#--------------------------------------------
+
+#		for name,accElem in self._accElemDict.iteritems():
+		kvs = accElem.getParameters()
+		for key,val in kvs.iteritems():
+			val_out = None
+			if val != None and key!="apertype" and key!="from":
+				tmp = ("{}".format(val)).split(",")
+				out = []
+				for aux in tmp:
+					aux = StringFunctions.replaceMath(aux)
+					res,val_out = StringFunctions.calculateString(aux.lower(),localValDict)
+					if len(tmp) == 1:
+						accElem.getParameters()[key] = val_out # directly
+					else:
+						out+=[val_out]
+				if out:
+					accElem.getParameters()[key] = out
+				if(not res):
+					print "=============MAD File problem ==============",
+					print "Problem with acc. element:",accElem.getName()
+					print "Parameter name:",key
+					print "Can not calculate string:",val
+					print "============ STOP =========================="
+					sys.exit(1)
+
+		return accElem
 
 		
 						
 		
 	def makeDrift(self, downstreamelem):
 	
-		# Now we have to creat a drift between elements because MADX
-		# sequence does not include drifts.
-		
+		# Now we have to create a drift between elements 
+
 		seqlength = len(self._sequencelist)
-		upstreamelemlength = 0
-		downstreamelemlength = 0
+		lenUp = 0.0 # upstream
+		lenDown = 0.0 # downstream
 		if(seqlength == 0):
-			startpos = 0
-			downstreamelemlength = float(downstreamelem.getParameter("l"))
+			posUp = 0.0
+			lenDown = downstreamelem.getParameter("l")
 		else:
 			upstreamelem = self._sequencelist[seqlength-1]
-			upstreamelemlength = float(upstreamelem.getParameter("l"))
-			downstreamelemlength = float(downstreamelem.getParameter("l"))
-			startpos = float(upstreamelem.getParameter("position")) + 0.5*upstreamelemlength
-		endpos = float(downstreamelem.getParameter("position")) - 0.5*downstreamelemlength
-
-		driftlength = endpos - startpos
+			lenUp = upstreamelem.getParameter("l")
+			lenDown = downstreamelem.getParameter("l")
+			posUp = upstreamelem.getParameter("position")
+			print("drift betweed {} and {} is:".format(downstreamelem.getName(),upstreamelem.getName()))
+		posDown = downstreamelem.getParameter("position")
+		driftlength = posDown - posUp - 0.5*(lenUp+lenDown)
+		print(driftlength)
+		print("{} positionDown {} positionUp {}".format(downstreamelem.getName(),posDown,posUp))
 
 		name = "Drift"# + "_" + str(seqlength)
 		type = "drift"
 		length = 0.0
 		strength = 0.0
 		
-		if(driftlength < -1e-10):
-			print "Warning: Drift between, ', upstreamelem.getName(), ' and ', downstreamelem.getName(), ' has negative length."
+		if(driftlength < 0):
+			print "Warning: Drift between {} and {} has negative length".format(upstreamelem.getName(), downstreamelem.getName())
 			print "Setting length to zero."
 			lattElem = MADX_LattElement(name, type)
 		else:
@@ -369,8 +644,75 @@ class MADX_Parser:
 			lattElem.addParameter("l", driftlength)
 
 		return lattElem
+#-------------------------------------------------------------------
+	def parseParameters(self,line_init, lattElem):
+		"""
+			Method. It finds all parameters and applies to the existing element.
+		"""
+		length = 0.0
+		strength = 0.0
+		# search for knl, ksl, APERTURE, ...  !! :={} or = {}
+		line_tmp = line_init 
+		if "{" in line_init and "}" in line_init:
+
+			line_init =line_init.replace("}", "!{")
+			line_init="".join([x if "!" not in x else "!" for x in line_init.split("{")])
+			line_init= ",".join([x for x in line_init.split(",") if "!" not in x])
+			#print(line_init)
+			#print(line_tmp)
 			
+			if "aperture" in line_tmp.lower():
+				tmp = [s for s  in line_tmp.split(",") if "apertype" in s.lower()]
+				if tmp:
+					apertype = tmp[0]
+				else:
+					apertype = 'ellipse' # default					
+				tmp = [i for i,s  in enumerate(line_tmp.split(",")) if "aperture" in s.lower()]
+				aper = line_tmp.split(",")[tmp[0]:tmp[0]+2] 
+				dim="{},{}".format(aper[0].split("{")[-1], aper[1].split("}")[0]) # super straightforward, can cause some troubles, if, for example, aperture = {a,...,b}
 			
+
+		tokens = line_init.split(",")
+		for token in tokens[1:]: # name+type are already parsed, aperture and knl/ksl are excluded
+			subtokens = token.split("=")
+			keyParam,valParam = subtokens[0].rstrip(":"),subtokens[1]
+
+			if "." in valParam:
+				# delete dots from names of variables in references to variables
+				valTmp = valParam[:]
+				for x in re.split(r'[)(*/+-]', valTmp):
+					if "." in x:
+						tmp = "".join(x.split("."))
+						if sum([s.isdigit() for s in tmp]) != len(tmp):
+							aux = valParam.split(x)
+							x =  "".join(x.split("."))
+							valParam =x.join(aux)
+				
+
+			if "." in keyParam:
+				# delete dots from names of params
+				keyParam =  "".join(keyParam.split("."))
+
+			lattElem.addParameter(keyParam,valParam)
+	
+		if "{" in line_tmp and "}" in line_tmp:
+			if "knl" in line_tmp.lower() or "ksl" in line_tmp.lower():
+				kls, poles, skews = self.makeMultiPols(line_tmp)
+				lattElem.addParameter("poles", poles)
+				lattElem.addParameter("skews", skews)
+				lattElem.addParameter("kls", kls)
+			if "aper" in line_tmp.lower():
+				apertype = apertype.split("=")
+				lattElem.addParameter("aperture", dim)
+				lattElem.addParameter("apertype", apertype[1])
+
+		#Make sure there is always a length parameter.
+		if(lattElem.hasParameter("l")==0):
+#			lattElem.addParameter("l",0.0)
+			lattElem.addParameter("l","0.0")
+				
+		return lattElem			
+#-------------------------------------------------------------------			
 	def parseElem(self,line_init):
 		"""
 			Method. It does the first parsing of the initial string.
@@ -379,95 +721,88 @@ class MADX_Parser:
 		type = ""
 		length = 0.0
 		strength = 0.0
-		
-		match = re.search(r'[\w.-]+:={.*',line_init)   # search for knl, ksl, APERTURE, ...
-		if match is not None:
-			line_init = line_init[:-len(match.group())-1]
-			match_multi = re.search(r'k+[\w,-]+:={.*}',match.group())
-			match_aper = re.search(r'aperture+.*',match.group())
-			if match_aper is not None:
-				apertype = re.search(r'apertype+.*',match.group())
-				apertype = apertype.group()
-				if match_multi is not None:
-					aper = match_aper.group()[:-len(match_multi.group()) - len(apertype) - 2]
-				else:
-					aper = match_aper.group()[: - len(apertype) - 1]
-		line_init = ''.join(line_init.split())  # remove all whitespaces character
-		tokens = line_init.split(",")
-		nvalues = len(tokens)
-		if nvalues >= 1:
-			subtokens = tokens[0].split(":")
-			name = subtokens[0]
-			type = subtokens[1].strip()
-			# elem can be defined as a child node
-			if type not in self._accElemDict.keys():			
-				lattElem = MADX_LattElement(name, type)
-			else:	
-				type_upd = self._accElemDict[type].getType()
-				lattElem = MADX_LattElement(name, type_upd)
-			for i in range(1, nvalues):
-				subtokens = tokens[i].split(":=")
-				lattElem.addParameter(subtokens[0],float(subtokens[1]))
-			if match is not None:
-				if match_multi is not None:
-					kls, poles, skews = self.makeMultiPols(match_multi.group())
-					lattElem.addParameter("poles", poles)
-					lattElem.addParameter("skews", skews)
-					lattElem.addParameter("kls", kls)
-				if match_aper is not None:
-					apertype = apertype.split("=")
-					dim = []
-					toke = aper.split("={")
-					subtok = toke[1].split(',')
-					for i in range(len(subtok)):
-						m = subtok[i].replace('}','')
-						dim.append(float(m))
-					lattElem.addParameter("aperture", dim)
-					lattElem.addParameter("apertype", apertype[1])
-					
-		else:
-			lattElem = MADX_LattElement(name, type)
-			print "Warning: Returning empty lattice element type."
 
-		#Make sure there is always a length parameter.
-		if(lattElem.hasParameter("l")==0):
-			lattElem.addParameter("l",0.0)
+		tokens = line_init.split(",")
+		subtokens = tokens[0].split(":")
+		name = subtokens[0]
+		type = subtokens[1]
+
+		# elem can be defined as a child node
+		paramsDict = {}
+		if type not in self._accElemDict.keys():			
+			type_upd = type
+		else:	
+			type_upd = self._accElemDict[type].getType()
+			paramsDict = self._accElemDict[type].getParameters()
+
+		if "marker" in type_upd.lower():
+			type_upd = "marker"
+		if "collimator" in type_upd.lower():
+			type_upd = "drift"
+		if "monitor" in type_upd.lower():
+			type_upd = "monitor"
+		if "kicker" in type_upd.lower():
+			type_upd = "kicker"
+		if "dipedge" in type_upd.lower(): # multipole or quad?
+			type_upd = "drift"
+		if "elseparator" in type_upd.lower():
+			type_upd = "marker"
+		if "instrument" in type_upd.lower():
+			type_upd = "marker"
+		if "rfcavity" in type_upd.lower(): # matrix doesnt exist
+			type_upd = "drift"
+
+		lattElem = MADX_LattElement(name, type_upd)
+		for key,val in paramsDict.iteritems():
+			lattElem.addParameter(key,val)
 				
-		return lattElem
+		if name =='':
+			lattElem = MADX_LattElement(name, type)
+			print "Warning: Empty lattice element type."
+
+		#print(lattElem.getParameters())
+		lattElem_upd = self.parseParameters(line_init, lattElem)
+		#print("params added {}".format(lattElem_upd.getParameters()))
+				
+		return lattElem_upd
 
 		
 	def makeMultiPols(self,line_init):
 		kls = []
 		poles = []
 		skews = []
-		tokens = line_init.split("},")
-		nvalues = len(tokens)
-		for i in range(0,nvalues):
-			subtokens = tokens[i].split(":={")
-			name = subtokens[0]
-			k = subtokens[1].split(',')
+		line_init =line_init.replace("}", "!{")
+		line_init="".join([x if "!" not in x else "!".join(x.split(",")) for x in line_init.split("{")])
+		tokens = [",".join(x.rstrip("!").split("!")) for x in line_init.split(",") if "!" in x and "aper" not in x]
+
+		for token in tokens:
+			subtokens = token.split("=")
+			name = subtokens[0].rstrip(":")
+			kls = subtokens[1].split(',')
+			if len(kls)==1:
+				kls+=['0.0']
+
 			if name == "knl":
-				for i in range(len(k)):
-					m = k[i].replace('}','')
-					kls.append(eval(m))
-					poles.append(i)
-					skews.append(0) 
+			    skews = ["0" for x in kls]
 			if name == "ksl":
-				for i in range(len(k)):
-					m = k[i].replace('}','')
-					kls.append(eval(m))
-					poles.append(i)
-					skews.append(1)
-		return kls, poles, skews
-		
+			    skews = ["1" for x in kls]
+			poles = ["{}".format(i) for i,x in enumerate(kls)]
+
+		#return kls, poles, skews
+		return ",".join(kls), ",".join(poles), ",".join(skews)
+
+
 	def makeAperture(self, downstreamelem):
 	
-		# Now we have to creat a aperture before and after the element with the MADX label aperture
+		# Now we have to create an aperture before and after the element with the MADX label aperture
 		type = "apertype"
 		name = "aperture"
 		lattElem = MADX_LattElement("Aperture", name)
 		lattElem.addParameter("l", 0.0)
 		dim = downstreamelem.getParameter(name)
+#		tmp = downstreamelem.getParameter(name)
+#		dim = tmp.split(",")
+		#print("dim {}".format(dim))
 		shape_type = downstreamelem.getParameter(type)
 		if shape_type == "circle":
 			shape = 1
@@ -496,4 +831,24 @@ class MADX_Parser:
 			"""
 		return self._sequencelist
 
+	def _parseNestedFileLine(self, line):
+		""" Returns the name of the nested file"""
+		#Define delimiter
+		dl="'"
+		if line.find(dl) < 0:
+			dl = "\""
+		ind0  = line.find(dl)
+		ind0 += 1
+		ind1  = line.rfind(dl)
+		str_res=""
+		if ind0 >= ind1 or ind0 < 0 or ind1 < 0:
+			print "Wrong line in the MAD file"
+			print "line Call file= defines wrong name of file format"
+			print "Should be : Call file = 'name of file'"
+			print "Line:",line
+			print "Stop."
+			sys.exit (0)
+		for i in range(ind0,ind1):
+			str_res = "".join([str_res,line[i]])
+		return str_res
 #STOP parsing a MAD file if there is a start of mad commands
