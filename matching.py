@@ -111,24 +111,16 @@ class Optics:
 
 		(arrmuX, arrPosAlphaX, arrPosBetaX) = matrix_lattice.getRingTwissDataX()
 		(arrmuY, arrPosAlphaY, arrPosBetaY) = matrix_lattice.getRingTwissDataY()
-		#(OrbX,OrbY) = matrix_lattice.getRingOrbit()
-		#OrbitX, OrbitY = orbit(lattice,bunch).get_orbit()
-
-		#XpArr,YpArr = [],[]
-		#for i in range(len(OrbitX)):
-		#	if (OrbitX[i][0]-OrbitX[i-1][0]):
-		#		XpArr.append((OrbitX[i][1]-OrbitX[i-1][1])/(OrbitX[i][0]-OrbitX[i-1][0]))
-		#		YpArr.append((OrbitY[i][1]-OrbitY[i-1][1])/(OrbitY[i][0]-OrbitY[i-1][0]))
-		#	else:
-		#		XpArr.append((OrbitX[i-1][1]-OrbitX[i-2][1])/(OrbitX[i-1][0]-OrbitX[i-2][0]))
-		#		YpArr.append((OrbitY[i-1][1]-OrbitY[i-2][1])/(OrbitY[i-1][0]-OrbitY[i-2][0]))
-	
-		
 
 		(DispersionX, DispersionXP) = matrix_lattice.getRingDispersionDataX()
 		(DispersionY, DispersionYP) = matrix_lattice.getRingDispersionDataY()
-		
+
 		nodes = lattice.getNodes()
+
+		matrixNodes = matrix_lattice.getNodes()	
+		idx = 0
+		Md = np.identity(6) # Matrix of downstream element
+
 		for node in nodes:
 			for j in range(len(arrPosBetaX)):
 				if (round(lattice.getNodePositionsDict()[node][1],4)==round(arrPosBetaX[j][0],4)):
@@ -141,10 +133,6 @@ class Optics:
 					betaY = arrPosBetaY[j][1]
 					alphaY = arrPosAlphaY[j][1]
 					dmuy = DispersionYP[j][1]
-					#x =  OrbitX[j][1]
-					#y =  XpArr[j][1]
-					#xp = OrbitX[j][1]
-					#yp = YpArr[j][1]
 
 			if node.getType() == "quad teapot":
 				k1l = node.getParam("kq")*node.getLength()
@@ -162,15 +150,11 @@ class Optics:
 			beamline.add(1)
 			j=len(beamline)-1
 			beamline[j]=Twiss()
-			beamline[j].data['keyword']=node.getName()
+			name = node.getName()
+			beamline[j].data['keyword']=name
 			beamline[j].data['marker']=node.getType()
 			beamline[j].data['s']=round(lattice.getNodePositionsDict()[node][1],4)
-			
-			if node.getType()=="multipole teapot":
-				beamline[j].data['L']=1.0
-			else:
-				beamline[j].data['L']=node.getLength()
-	
+			beamline[j].data['L']=node.getLength()
 			beamline[j].data['alfx']=alphaX
 			beamline[j].data['alfy']=alphaY
 			beamline[j].data['betx']=betaX
@@ -182,16 +166,21 @@ class Optics:
 			beamline[j].data['angle']=angle
 			beamline[j].data['k1']=k1l
 
-			beamline[j].data['map'] = array([[1.0,node.getLength(),0.0,0.0,0.0,0.0],
-			              [-k1l,1.0,0.0,0.0,0.0,0.0],
-			              [0.0,0.0,1.0,node.getLength(),0.0,0.0],
-			              [0.0,0.0,k1l,1.0,0.0,0.0],
-			              [0.0,0.0,0.0,0.0,1.0,0.0],
-			              [0.0,0.0,0.0,0.0,0.0,1.0]])
-			#beamline[j].data['x'] = x # coordinate system ?????
-			#beamline[j].data['y'] = y
-			#beamline[j].data['xp'] = xp
-			#beamline[j].data['yp'] = yp
+			matName = matrixNodes[idx].getName()
+
+			M = np.identity(6)
+
+			while name in matName and idx < len(matrixNodes)-1:
+				matNode = matrixNodes[idx]
+				matName = matNode.getName()
+				mt = matNode.getMatrix()
+				idx+=1
+				for index in range(36):
+					Md[index//6,index%6] = mt.get(index//6,index%6)
+
+				M = np.dot(M[:],Md)
+
+			beamline[j].data['map'] = M
 
 		return beamline
 #------------------------------------------------------
@@ -226,8 +215,6 @@ class EnvelopeSolver:
 		f4=y[5]
 		f5=-(k1/lj+(anglej/lj)**2)*y[4]+0.5*Ksc/(y[0]*(y[0]+y[2]))*y[4]+anglej/lj
 
-		#print("f0,f1,f2,f3,f4,f5 = {},{},{},{},{},{}".format(f0,f1,f2,f3,f4,f5))
-
 		return [f0,f1,f2,f3,f4,f5]
 	
 	def Dfunc_odeint(self,y,s,emitx,emity,sigma_p,Ksc):
@@ -242,7 +229,6 @@ class EnvelopeSolver:
 		a4=-(k1/lj+(anglej/lj)**2)*y[4]+0.5*Ksc/(y[0]*(y[0]+y[2]))*y[4]+anglej/lj
 		a5=-(k1/lj+(anglej/lj)**2)*y[5]+0.5*Ksc/(y[0]*(y[0]+y[2]))*y[5]-0.5*Ksc/(y[0]*(y[0]+y[2]))**2*y[4]*(y[1]*(y[0]+y[2])+y[0]*(y[1]+y[3]) )
 
-#		print("[a0,a1,a2,a3,a4,a5] = {},{},{},{},{},{}".format(a0,a1,a2,a3,a4,a5))
 		return [a0,a1,a2,a3,a4,a5]
 
 	
@@ -251,9 +237,6 @@ class EnvelopeSolver:
 		Nb=len(self.beamline)
 		Lb=self.beamline[Nb-1].data['s']
 		s=linspace(0.0,Lb,num=Np)
-
-		#s = array([x.data['s'] for x in  self.beamline if x.data['marker'] == "multipole teapot"])
-		#print(s)
 
 #		sol=odeint(self.func_odeint,[x0,xs0,y0,ys0,Dx0,Dxs0],s,args=(emitx,emity,sigma_p,Ksc),Dfun=self.Dfunc_odeint,rtol=1.0e-12,atol=1.0e-12)
 		sol=odeint(self.func_odeint,[x0,xs0,y0,ys0,Dx0,Dxs0],s,args=(emitx,emity,sigma_p,Ksc),rtol=1.0e-12,atol=1.0e-12)
@@ -415,17 +398,11 @@ class EnvelopeSolver:
 
 	def twiss_evolution(self,tw,Ksc,emitx,emity,sigma_p):
 		Nelements=len(self.beamline)
-		Lb=self.beamline.get_length()
 		tw0=deepcopy(tw)
 		twiss_vec=zeros((Nelements,6))
 
 
-		Msc=array([[1.0,0.0,0.0,0.0,0.0,0.0],
-		              [0.0,1.0,0.0,0.0,0.0,0.0],
-		              [0.0,0.0,1.0,0.0,0.0,0.0],
-		              [0.0,0.0,0.0,1.0,0.0,0.0],
-		              [0.0,0.0,0.0,0.0,1.0,0.0],
-		              [0.0,0.0,0.0,0.0,0.0,1.0]])
+		Msc=np.identity(6)
 
 		ax_lens=0.0
 		ay_lens=0.0
@@ -464,24 +441,24 @@ class EnvelopeSolver:
 	def match_twiss_matrix(self,emitx,emity,sigma_p,Ksc):
 		# init tw
 		tw=deepcopy(self.beamline[-1])
+		bline = self.beamline[-1]
 	   	# start value
-		x0=sqrt(self.beamline[-1].data['betx']*emitx)
-		gamx=(1.0+(self.beamline[-1].data['alfx'])**2)/self.beamline[-1].data['betx']
-		xs0=-copysign(sqrt(gamx*emitx),self.beamline[-1].data['alfx'])
-		y0=sqrt(self.beamline[-1].data['bety']*emity)
-		gamy=(1.0+(self.beamline[-1].data['alfy'])**2)/self.beamline[-1].data['bety']
-		ys0=-copysign(sqrt(gamy*emity),self.beamline[-1].data['alfy'])
-		Dx0=self.beamline[-1].data['Dx']
-		Dxs0=self.beamline[-1].data['Dpx']
+		x0=sqrt(bline.data['betx']*emitx)
+		gamx=(1.0+(bline.data['alfx'])**2)/bline.data['betx']
+		xs0=-copysign(sqrt(gamx*emitx),bline.data['alfx'])
+		y0=sqrt(bline.data['bety']*emity)
+		gamy=(1.0+(bline.data['alfy'])**2)/bline.data['bety']
+		ys0=-copysign(sqrt(gamy*emity),bline.data['alfy'])
+		Dx0=bline.data['Dx']
+		Dxs0=bline.data['Dpx']
 		# solver
-		sol=root(self.func_fsolve_matrix, [x0,xs0,y0,ys0,Dx0,Dxs0], args=(Ksc,emitx,emity,sigma_p),method='lm', options={'maxiter':10000})
+		print("[x0,xs0,y0,ys0,Dx0,Dxs0] = {}".format([x0,xs0,y0,ys0,Dx0,Dxs0]))
+		sol=root(self.func_fsolve_matrix, [x0,xs0,y0,ys0,Dx0,Dxs0], args=(Ksc,emitx,emity,sigma_p),method='lm')
 
-		# upd twiss
 		if not sol.success:
-			print("Sollution not found, try again")
-			x_start = sol.x # maybe it has been already close to convergence
-			sol=root(self.func_fsolve_matrix, x_start, args=(Ksc,emitx,emity,sigma_p),method='lm', options={'maxiter':20000})
-
+			print("Sollution not found try again")
+	
+		# upd twiss
 		tw.data['betx']=sol.x[0]
 		tw.data['alfx']=sol.x[1]
 		tw.data['bety']=sol.x[2]

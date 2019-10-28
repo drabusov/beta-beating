@@ -628,7 +628,7 @@ class MADX_Parser:
 		seqlength = len(self._sequencelist)
 		lenUp = 0.0 # upstream
 		lenDown = 0.0 # downstream
-		if(seqlength == 0):
+		if seqlength == 0:
 			posUp = 0.0
 			lenDown = downstreamelem.getParameter("l")
 		else:
@@ -640,16 +640,14 @@ class MADX_Parser:
 		posDown = downstreamelem.getParameter("position")
 		driftlength = posDown - posUp - refer[0]*lenUp -refer[1]*lenDown
 		#print(driftlength)
-		#print("{} positionDown {} positionUp {}".format(downstreamelem.getName(),posDown,posUp))
+		#print("{} positionDown {} positionUp {} difference {}".format(downstreamelem.getName(),posDown,posUp,posDown-posUp))
 		#print("lenDown {} lenUp {}".format(lenDown,lenUp))		
 
-		name = "Drift"# + "_" + str(seqlength)
+		name = "Drift{}".format(seqlength)
 		type = "drift"
-		length = 0.0
-		strength = 0.0
 		
-		if(driftlength < 0):
-			print "Warning: Drift between {} and {} has negative length".format(upstreamelem.getName(), downstreamelem.getName())
+		if driftlength < 0:
+			print "Warning: Drift between {} and {} has negative length, value = {}".format(upstreamelem.getName(), downstreamelem.getName(),driftlength)
 			print "Setting length to zero."
 			lattElem = MADX_LattElement(name, type)
 		else:
