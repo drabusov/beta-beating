@@ -1272,9 +1272,10 @@ class AddErrorSet():
         et   = setDict["elementtype"]
         ringline = setDict["ringline"]
 	
-#--------------------------------------------------------- homemade errtab reading----------	
-	fname = paramsDict["filename"]	
-	errDF = readTable(fname)
+#--------------------------------------------------------- homemade errtab reading----------
+	if "filename" in paramsDict:
+		fname = paramsDict["filename"]	
+		errDF = readTable(fname)
 #--------------------------------------------------------- homemade errtab reading----------	
 	
         errnodecandidates = []
