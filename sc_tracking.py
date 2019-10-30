@@ -23,8 +23,7 @@ from orbit.utils.orbit_mpi_utils import bunch_pyorbit_to_orbit
 
 # ATTENTION !!! The python packages numpy and scipy are required
 from orbit.orbit_correction import orbit, correction   
-from scipy.optimize import minimize as som
-
+from orbit.beta_correction import betaCorrection   
 
 from spacecharge import Boundary2D
 from orbit.space_charge.sc2p5d import scAccNodes, scLatticeModifications
@@ -112,89 +111,19 @@ beta_y1 = np.transpose(TwissDataY1[-1])
 beat_x0=100*(beta_x1[1]/beta_x0[1] - 1)	
 beat_y0=100*(beta_y1[1]/beta_y0[1] - 1)	
 
-#----------------------------------BETA CORRECTION-----------------------------------------------------
 
-corrDict = {}
-bpmList = []
-for node in lattice.getNodes():
-	name = node.getName()
-	type=node.getType()
-	if "corr" in name.lower():
-		if type == "quad teapot" or type == "multipole teapot":
-			position = lattice.getNodePositionsDict()[node]
-			corrDict[name] = position
-	if type == "monitor teapot":
-		s_i,s_f = lattice.getNodePositionsDict()[node]
-		bpmList.append((name,round(s_i,6),round(s_f,6)))
+bc = betaCorrection(lattice,b)
+bc.correction()
+bc.getSolution()
 
-
-index = []
-s=0
-i=0
-for bpm in bpmList:
-	s = TwissDataX0[0][i][0]
-	while s<bpm[1] or s>bpm[2]:
-		i+=1
-		s = TwissDataX0[0][i][0]
-	index.append(i)
-
-
-def setCorrectors(theta):
-
-	for i,name in enumerate(corrDict.keys()):
-		elem =lattice.getNodeForName(name)
-		type = elem.getType()
-		if type=="quad teapot":
-			elem.setParam("kq", theta[i])
-
-		if type=="multipole teapot":
-			elem.setParam("kls", [0,theta[i]])
-
-def getBetaBpm(TwissDataX,TwissDataY):
-	betaX = [x[1] for i,x in enumerate(TwissDataX[-1]) if i in index]
-	betaY = [y[1] for i,y in enumerate(TwissDataY[-1]) if i in index]
-	return np.array(betaX),np.array(betaY)
-
-
-def periodicBeta(theta):
-
-	setCorrectors(theta)
-
-	matrix_lattice = TEAPOT_MATRIX_Lattice(lattice,b)
-	TwissDataX,TwissDataY = matrix_lattice.getRingTwissDataX(),matrix_lattice.getRingTwissDataY()
-	betaX,betaY = getBetaBpm(TwissDataX,TwissDataY)
-
-	metric_x = (np.max(betaX)-np.min(betaX))*np.std(betaX)
-	metric_y = (np.max(betaY)-np.min(betaY))*np.std(betaY)
-    
-	if np.abs(metric_x - metric_y) > np.max([metric_x,metric_y]):
-		if metric_x < metric_y:
-			metric = 2*metric_y
-		else:
-			metric = 2*metric_x
-	else:
-		metric = metric_x+metric_y    
-	return metric
-
-def con1(x):
-    return 0.05*np.sqrt(2)-np.sum(x**2)
-
-theta = np.zeros(12)
-#theta = np.random.normal(0,10**(-6),12)
-cons = [{"type": "ineq", "fun": con1}]
-options_dict = {'rhobeg': 10**(-5), 'disp': True}
-vec_beta_per = som(periodicBeta, theta, method="COBYLA", constraints=cons, options=options_dict)
-print(vec_beta_per)
-
-setCorrectors(vec_beta_per.x)
 
 matrix_lattice = TEAPOT_MATRIX_Lattice(lattice,b)
 
 TwissDataX2,TwissDataY2 = matrix_lattice.getRingTwissDataX(),matrix_lattice.getRingTwissDataY()
 
-betaX0,betaY0 = getBetaBpm(TwissDataX0,TwissDataY0)
-betaX1,betaY1 = getBetaBpm(TwissDataX1,TwissDataY1)
-betaX2,betaY2 = getBetaBpm(TwissDataX2,TwissDataY2)
+betaX0,betaY0 = bc.getBetaBpm(TwissDataX0,TwissDataY0)
+betaX1,betaY1 = bc.getBetaBpm(TwissDataX1,TwissDataY1)
+betaX2,betaY2 = bc.getBetaBpm(TwissDataX2,TwissDataY2)
 
 beta_x2 = np.transpose(TwissDataX2[-1])
 beta_y2 = np.transpose(TwissDataY2[-1])
@@ -252,7 +181,6 @@ plt.plot(beta_x0[0],beat_x1, label="horizontal beta-beat corrected")
 [plt.axhline(x,color = "blue", ls=":") for x in (betaX1/betaX0-1)*100]
 [plt.axhline(x,color = "red") for x in (betaX2/betaX0-1)*100]
 
-
 plt.xlabel(r'$s$ [m]')
 plt.ylabel(r'$\beta_x$ [m]')
 
@@ -260,6 +188,10 @@ plt.subplot(212)
 #plt.plot(beta_y1[0],beta_y1[1], label="vertical beta-beat")
 plt.plot(beta_y0[0],beat_y0, label="vertical beta-beat")
 plt.plot(beta_y0[0],beat_y1, label="vertical beta-beat corrected")
+
+[plt.axhline(y,color = "blue", ls=":") for y in (betaY1/betaY0-1)*100]
+[plt.axhline(y,color = "red") for y in (betaY2/betaY0-1)*100]
+
 plt.xlabel(r'$s$ [m]')
 plt.ylabel(r'$\beta_y$ [m]')
 plt.subplots_adjust(bottom=0.15,left=0.15,hspace=0.5)
