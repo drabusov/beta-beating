@@ -49,17 +49,17 @@ class betaCorrection:
 	    return A*len(x)-np.sum(x**2)
 
 		
-	def correction(self):
+	def correction(self,rhobeg=1e-5,A=0.05,pattern="corr"):
 	
-		self.findElements()
+		self.findElements(pattern)
 
 		print("Numbers of monitors found {}".format(len(self.bpmList)))
 		print("Numbers of correctors found {}".format(len(self.corrDict)))
 		
 
 		theta = np.zeros(12)
-		cons = [{"type": "ineq", "fun": self.constraintFunc}]
-		optionsDict = {'rhobeg': 10**(-5), 'disp': True}
+		cons = [{"type": "ineq", "fun": lambda x: A*len(x)-np.sum(x**2)}]
+		optionsDict = {'rhobeg':rhobeg, 'disp': True}
 
 		vec = som(self.periodicBeta, theta, method="COBYLA", constraints=cons, options=optionsDict)
 
@@ -67,7 +67,7 @@ class betaCorrection:
 		self.solution = vec.x
 
 
-	def findElements(self,pattern="corr"):		
+	def findElements(self,pattern):		
 
 		nodes = self.lattice.getNodes()
 		for node in nodes:

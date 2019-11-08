@@ -37,16 +37,24 @@ from orbit.errors import AddErrorNode,AddErrorSet
 
 from bunch import BunchTwissAnalysis
 
+from orbit.diagnostics import TeapotTuneAnalysisNode,addTeapotDiagnosticsNode
+
 #---------------------------------------------Bunch init---------------------------------------------
 print "Start."
 
-emitx = 10e-7
-emity = 10e-7
-sigma_p = 1e-3
+emitx = 1e-9
+emity = 1e-9
+sigma_p = 1e-5
 
 b = Bunch()
 total_macroSize=1e+10
 b.macroSize(total_macroSize)
+
+lostbunch = Bunch()
+trackDict = {}
+trackDict["lostbunch"]=lostbunch
+trackDict["bunch"]= b
+lostbunch.addPartAttr("LostParticleAttributes")
 
 energy = 1
 syncPart=b.getSyncParticle()
@@ -78,8 +86,6 @@ TwissDataX0,TwissDataY0 = matrix_lattice.getRingTwissDataX(),matrix_lattice.getR
 beta_x0 = np.transpose(TwissDataX0[-1])
 beta_y0 = np.transpose(TwissDataY0[-1])
 
-#----------------------------Add Space Charge nodes----------------------------------------------------
-
 #---------------------------------------------------- ERRORS-------------------------------------------
 # WE INTRODUCE MISALIGNEMENT IN THE QUADRUPOLES; dx, dy = HOR AND VER DISPLACEMENT OF QUADRUPOLES
 
@@ -95,13 +101,50 @@ paramsDict["errtype"]  = "FieldError"
 paramsDict["subtype"]  = "QuadField"
 
 paramsDict["sample"]      = "Gaussian"
-paramsDict["fracerr"]      = 0.011
+paramsDict["fracerr"]      = 0.012
 paramsDict["mean"]        = 0.0
 paramsDict["sigma"]       = 1.0
 
-#ESet  = AddErrorSet(lattice, positioni, positionf, setDict, paramsDict, seed_value=50)
-ESet  = AddErrorSet(lattice, positioni, positionf, setDict, paramsDict) # Random
+ESet  = AddErrorSet(lattice, positioni, positionf, setDict, paramsDict, seed_value=50)
+#ESet  = AddErrorSet(lattice, positioni, positionf, setDict, paramsDict) # Random
 print "FIELD ERRORS IN THE QUADRUPOLES/MULTIPOLES ARE APPLIED"
+
+matrix_lattice = TEAPOT_MATRIX_Lattice(lattice,b)
+TwissDataX1,TwissDataY1 = matrix_lattice.getRingTwissDataX(),matrix_lattice.getRingTwissDataY()
+
+#--------------------------------------------------------------------------------
+
+n_particles = 5000
+twissX = TwissContainer(alpha = TwissDataX0[1][0][1], beta = TwissDataX0[2][0][1], emittance = emitx)
+twissY = TwissContainer(alpha = TwissDataY0[1][0][1], beta = TwissDataY0[2][0][1], emittance = emity)
+#twissX = TwissContainer(alpha = TwissDataX1[1][0][1], beta = TwissDataX1[2][0][1], emittance = emitx)
+#twissY = TwissContainer(alpha = TwissDataY1[1][0][1], beta = TwissDataY1[2][0][1], emittance = emity)
+
+twissZ = TwissContainer(alpha = 0., beta = 100000000., emittance = sigma_p)
+distType="kv"
+if distType=="gauss":
+	dist = GaussDist3D(twissX,twissY,twissZ)
+else:
+	distType="kv"
+	dist = KVDist3D(twissX,twissY,twissZ)
+
+phase_space=[]
+for i in range(n_particles):
+	particle = dist.getCoordinates()
+	phase_space.append(particle)
+	b.addParticle(*particle)
+
+nParticlesGlobal = b.getSizeGlobal()
+b.macroSize(total_macroSize/nParticlesGlobal)
+print "Bunch Generated"
+
+#----------------------------Add Tune Diagnostics -----------------------------------------------------
+
+tunes = TeapotTuneAnalysisNode("tune_analysis")
+tunes.assignTwiss(TwissDataX0[2][0][1], TwissDataX0[1][0][1], 0.0, 0.0, TwissDataY0[2][0][1], TwissDataY0[1][0][1])
+addTeapotDiagnosticsNode(lattice, 0, tunes)
+
+print("Tune analysis node added")
 
 #----------------------------Add Space Charge nodes----------------------------------------------------
 
@@ -115,58 +158,37 @@ scLatticeModifications.setSC2p5DAccNodes(lattice, sc_path_length_min, calc2p5d)
 
 print "SC nodes appied to the lattice"
 
-#--------------------------------------------------------------------------------
-
-n_particles = 5000
-twissX = TwissContainer(alpha = TwissDataX0[1][0][1], beta = TwissDataX0[2][0][1], emittance = emitx)
-twissY = TwissContainer(alpha = TwissDataY0[1][0][1], beta = TwissDataY0[2][0][1], emittance = emity)
-twissZ = TwissContainer(alpha = 0., beta = 100000000., emittance = sigma_p)
-dist = GaussDist3D(twissX,twissY,twissZ)
-#dist = KVDist3D(twissX,twissY,twissZ)
-
-bunchtwissanalysis = BunchTwissAnalysis()
-
-phase_space=[]
-for i in range(n_particles):
-	particle = dist.getCoordinates()
-	phase_space.append(particle)
-	b.addParticle(*particle)
-
-print "Bunch Generated"
 #--------------------------------Tracking-----------------------------------------
 
 print("tracking")
 x_space0 =[ (b.x(i), b.px(i)) for i in range(n_particles)]
 
-n_turns = 1000
-emitX,emitY = [],[]
-for i in range(n_turns):
-	lattice.trackBunch(b)
-	if (i+1)%10==0:
-		bunchtwissanalysis.analyzeBunch(b)
-		Ex = bunchtwissanalysis.getEmittance(0)
-		Ey = bunchtwissanalysis.getEmittance(1)
-		emitX.append(Ex)
-		emitY.append(Ey)
+bunchtwissanalysis = BunchTwissAnalysis()
 
+bunchtwissanalysis.analyzeBunch(b)
+Ex = bunchtwissanalysis.getEmittance(0)
+Ey = bunchtwissanalysis.getEmittance(1)
+
+emitX,emitY,turn = [Ex],[Ey],[0]
+n_turns = 500
+for i in range(n_turns):
+	lattice.trackBunch(b,trackDict)
+#	if (i+1)%10==0 or i<9:
+	bunchtwissanalysis.analyzeBunch(b)
+	Ex = bunchtwissanalysis.getEmittance(0)
+	Ey = bunchtwissanalysis.getEmittance(1)
+	emitX.append(Ex)
+	emitY.append(Ey)
+	turn.append(i+1)
+
+strIn = "_{}_{}_{}_{:.0e}".format(distType,n_particles,emitx,total_macroSize)
+#lostbunch.dumpBunch("lostbunch{}.dat".format(strIn))
+b.dumpBunch("bunch{}.dat".format(strIn))
 x_space =[ (b.x(i), b.px(i)) for i in range(n_particles)]
 
 #--------------------------------------------------------------------------------
 
-b.deleteAllParticles()
-print "Bunch deleted"
-
-for particle in phase_space:
-	b.addParticle(*particle)
-
-print "Bunch created with the same initial coordinates"
-
-#------------------------------------------------------------------------------------------------------
-
 print("correction section")
-matrix_lattice = TEAPOT_MATRIX_Lattice(lattice,b)
-
-TwissDataX1,TwissDataY1 = matrix_lattice.getRingTwissDataX(),matrix_lattice.getRingTwissDataY()
 
 beta_x1 = np.transpose(TwissDataX1[-1])
 beta_y1 = np.transpose(TwissDataY1[-1])
@@ -176,7 +198,7 @@ beat_y0=100*(beta_y1[1]/beta_y0[1] - 1)
 
 
 bc = betaCorrection(lattice,b)
-bc.correction()
+bc.correction(rhobeg=1e-4)
 bc.getSolution()
 
 
@@ -196,18 +218,47 @@ beat_y1=100*(beta_y2[1]/beta_y0[1] - 1)
 
 #--------------------------------------------------------------------------------
 
+b.deleteAllParticles()
+print "Bunch deleted"
+
+for particle in phase_space:
+	b.addParticle(*particle)
+print "Bunch created with the same initial coordinates"
+
+#twissX = TwissContainer(alpha = TwissDataX0[1][0][1], beta = TwissDataX0[2][0][1], emittance = emitx)
+#twissY = TwissContainer(alpha = TwissDataY0[1][0][1], beta = TwissDataY0[2][0][1], emittance = emity)
+#twissZ = TwissContainer(alpha = 0., beta = 100000000., emittance = sigma_p)
+
+#if distType=="gauss":
+#	dist = GaussDist3D(twissX,twissY,twissZ)
+#else:
+#	dist = KVDist3D(twissX,twissY,twissZ)
+
+#for i in range(n_particles):
+#	particle = dist.getCoordinates()
+#	b.addParticle(*particle)
+#print "Bunch created with the updated initial coordinates"
+
+#------------------------------------------------------------------------------------------------------
+
+bunchtwissanalysis.analyzeBunch(b)
+Ex = bunchtwissanalysis.getEmittance(0)
+Ey = bunchtwissanalysis.getEmittance(1)
+
 print("tracking")
-emitXcorr,emitYcorr = [],[]
+emitXcorr,emitYcorr = [Ex],[Ey]
 for i in range(n_turns):
-	lattice.trackBunch(b)
-	if (i+1)%10==0:
-		bunchtwissanalysis.analyzeBunch(b)
-		Ex = bunchtwissanalysis.getEmittance(0)
-		Ey = bunchtwissanalysis.getEmittance(1)
-		emitXcorr.append(Ex)
-		emitYcorr.append(Ey)
+	lattice.trackBunch(b,trackDict)
+#	if (i+1)%10==0 or i <9:
+	bunchtwissanalysis.analyzeBunch(b)
+	Ex = bunchtwissanalysis.getEmittance(0)
+	Ey = bunchtwissanalysis.getEmittance(1)
+	emitXcorr.append(Ex)
+	emitYcorr.append(Ey)
 
 x_space1 =[ (b.x(i), b.px(i)) for i in range(n_particles)]
+#lostbunch.dumpBunch("lostbunch_corr{}{:.0e}.dat".format(strIn))
+b.dumpBunch("bunch_corr{}.dat".format(strIn))
 
 #--------------------------------------------------------------------------------
 
@@ -223,11 +274,11 @@ def save_dict(data,filename):
 		w.write(",".join(out)+"\n")
 	w.close()
 
-d = {"emitX":emitX,"emitY":emitY,"emitXcorr":emitXcorr,"emitYcorr":emitYcorr}
-save_dict(d,"emitances.csv") 
+d = {"emitX":emitX,"emitY":emitY,"emitXcorr":emitXcorr,"emitYcorr":emitYcorr,"turn":turn}
+save_dict(d,"data/emitances{}.csv".format(strIn)) 
 
 d = {"s":beta_x0[0],"beat_x0":beat_x0,"beat_x1":beat_x1,"beat_y0":beat_y0,"beat_y1":beat_y1}
-save_dict(d,"beating.csv") 
+save_dict(d,"data/beating_{}_{}_{:.0e}.csv".format(n_particles,emitx,total_macroSize)) 
 
 beatxBPM1 = (betaX1/betaX0-1)*100
 beatxBPM2 = (betaX2/betaX0-1)*100
@@ -237,7 +288,7 @@ beatyBPM2 = (betaY2/betaY0-1)*100
 
 sBPM=[np.mean(bpm[1:]) for bpm in bc.bpmList]
 d = {"sBPM":sBPM,"beatxBPM1":beatxBPM1,"beatxBPM2":beatxBPM2,"beatyBPM1":beatyBPM1,"beatyBPM2":beatyBPM2}
-save_dict(d,"beatingBPM.csv") 
+save_dict(d,"data/beatingBPM_{}_{}_{:.0e}.csv".format(n_particles,emitx,total_macroSize)) 
 
 #--------------------------------------------------------------------------------
 
