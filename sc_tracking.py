@@ -42,12 +42,12 @@ from orbit.diagnostics import TeapotTuneAnalysisNode,addTeapotDiagnosticsNode
 #---------------------------------------------Bunch init---------------------------------------------
 print "Start."
 
-emitx = 1e-9
-emity = 1e-9
+emitx = 5e-9
+emity = 5e-9
 sigma_p = 1e-5
 
 b = Bunch()
-total_macroSize=1e+10
+total_macroSize=1e+11
 b.macroSize(total_macroSize)
 
 lostbunch = Bunch()
@@ -105,23 +105,38 @@ paramsDict["fracerr"]      = 0.012
 paramsDict["mean"]        = 0.0
 paramsDict["sigma"]       = 1.0
 
-ESet  = AddErrorSet(lattice, positioni, positionf, setDict, paramsDict, seed_value=50)
+ESet  = AddErrorSet(lattice, positioni, positionf, setDict, paramsDict, seed_value=40)
 #ESet  = AddErrorSet(lattice, positioni, positionf, setDict, paramsDict) # Random
 print "FIELD ERRORS IN THE QUADRUPOLES/MULTIPOLES ARE APPLIED"
 
 matrix_lattice = TEAPOT_MATRIX_Lattice(lattice,b)
 TwissDataX1,TwissDataY1 = matrix_lattice.getRingTwissDataX(),matrix_lattice.getRingTwissDataY()
 
+#---------------------Envelope Solver--------------------------------------------
+'''
+beamline = Optics().readtwiss_teapot(lattice, b)
+solve = EnvelopeSolver(beamline)
+L=lattice.getLength()
+Ksc = Optics().getPerveance(b,total_macroSize,L,emitx,emity)
+twiss_sc = solve.match_twiss_matrix(emitx,emity,sigma_p,Ksc) # nicht nur field errors, sondern auch SC
+'''
 #--------------------------------------------------------------------------------
 
-n_particles = 5000
+n_particles = 50000
 twissX = TwissContainer(alpha = TwissDataX0[1][0][1], beta = TwissDataX0[2][0][1], emittance = emitx)
 twissY = TwissContainer(alpha = TwissDataY0[1][0][1], beta = TwissDataY0[2][0][1], emittance = emity)
-#twissX = TwissContainer(alpha = TwissDataX1[1][0][1], beta = TwissDataX1[2][0][1], emittance = emitx)
-#twissY = TwissContainer(alpha = TwissDataY1[1][0][1], beta = TwissDataY1[2][0][1], emittance = emity)
+'''
+if solve.success== True:
+	twissX = TwissContainer(alpha = twiss_sc[0,1], beta = twiss_sc[0,0], emittance = emitx)
+	twissY = TwissContainer(alpha = twiss_sc[0,3], beta = twiss_sc[0,2], emittance = emity)
+else:
+	twissX = TwissContainer(alpha = TwissDataX0[1][0][1], beta = TwissDataX0[2][0][1], emittance = emitx)
+	twissY = TwissContainer(alpha = TwissDataY0[1][0][1], beta = TwissDataY0[2][0][1], emittance = emity)
+	print("!!! WARNING, DISTRIBUTION ISNT MATCHED")
 
+'''
 twissZ = TwissContainer(alpha = 0., beta = 100000000., emittance = sigma_p)
-distType="kv"
+distType="gauss"
 if distType=="gauss":
 	dist = GaussDist3D(twissX,twissY,twissZ)
 else:
@@ -168,17 +183,23 @@ bunchtwissanalysis = BunchTwissAnalysis()
 bunchtwissanalysis.analyzeBunch(b)
 Ex = bunchtwissanalysis.getEmittance(0)
 Ey = bunchtwissanalysis.getEmittance(1)
+x = bunchtwissanalysis.getCorrelation(0,0)
+y = bunchtwissanalysis.getCorrelation(2,2)
 
-emitX,emitY,turn = [Ex],[Ey],[0]
-n_turns = 500
+emitX,emitY,xMean,yMean,turn = [Ex],[Ey],[x],[y],[0]
+n_turns = 250
 for i in range(n_turns):
 	lattice.trackBunch(b,trackDict)
 #	if (i+1)%10==0 or i<9:
 	bunchtwissanalysis.analyzeBunch(b)
 	Ex = bunchtwissanalysis.getEmittance(0)
 	Ey = bunchtwissanalysis.getEmittance(1)
+	x = bunchtwissanalysis.getCorrelation(0,0)
+	y = bunchtwissanalysis.getCorrelation(2,2)
 	emitX.append(Ex)
 	emitY.append(Ey)
+	xMean.append(x)
+	yMean.append(y)
 	turn.append(i+1)
 
 strIn = "_{}_{}_{}_{:.0e}".format(distType,n_particles,emitx,total_macroSize)
@@ -198,7 +219,7 @@ beat_y0=100*(beta_y1[1]/beta_y0[1] - 1)
 
 
 bc = betaCorrection(lattice,b)
-bc.correction(rhobeg=1e-4)
+bc.correction(rhobeg=5e-3)
 bc.getSolution()
 
 
@@ -225,36 +246,53 @@ for particle in phase_space:
 	b.addParticle(*particle)
 print "Bunch created with the same initial coordinates"
 
-#twissX = TwissContainer(alpha = TwissDataX0[1][0][1], beta = TwissDataX0[2][0][1], emittance = emitx)
-#twissY = TwissContainer(alpha = TwissDataY0[1][0][1], beta = TwissDataY0[2][0][1], emittance = emity)
-#twissZ = TwissContainer(alpha = 0., beta = 100000000., emittance = sigma_p)
+'''
+beamline_corr = Optics().readtwiss_teapot(lattice, b)
+solve_corr = EnvelopeSolver(beamline_corr)
+twiss_sc = solve_corr.match_twiss_matrix(emitx,emity,sigma_p,Ksc) # nicht nur field errors, sondern auch SC
 
-#if distType=="gauss":
-#	dist = GaussDist3D(twissX,twissY,twissZ)
-#else:
-#	dist = KVDist3D(twissX,twissY,twissZ)
+n_particles = 5000
+if solve.success== True:
+	twissX = TwissContainer(alpha = twiss_sc[0,1], beta = twiss_sc[0,0], emittance = emitx)
+	twissY = TwissContainer(alpha = twiss_sc[0,3], beta = twiss_sc[0,2], emittance = emity)
+else:
+	twissX = TwissContainer(alpha = TwissDataX0[1][0][1], beta = TwissDataX0[2][0][1], emittance = emitx)
+	twissY = TwissContainer(alpha = TwissDataY0[1][0][1], beta = TwissDataY0[2][0][1], emittance = emity)
+	print("!!! WARNING, DISTRIBUTION ISNT MATCHED")
 
-#for i in range(n_particles):
-#	particle = dist.getCoordinates()
-#	b.addParticle(*particle)
-#print "Bunch created with the updated initial coordinates"
 
+if distType=="gauss":
+	dist = GaussDist3D(twissX,twissY,twissZ)
+else:
+	dist = KVDist3D(twissX,twissY,twissZ)
+
+for i in range(n_particles):
+	particle = dist.getCoordinates()
+	b.addParticle(*particle)
+print "Bunch created with the updated initial coordinates"
+'''
 #------------------------------------------------------------------------------------------------------
 
 bunchtwissanalysis.analyzeBunch(b)
 Ex = bunchtwissanalysis.getEmittance(0)
 Ey = bunchtwissanalysis.getEmittance(1)
+x = bunchtwissanalysis.getCorrelation(0,0)
+y = bunchtwissanalysis.getCorrelation(2,2)
 
 print("tracking")
-emitXcorr,emitYcorr = [Ex],[Ey]
+emitXcorr,emitYcorr,xCorr,yCorr = [Ex],[Ey],[x],[y]
 for i in range(n_turns):
 	lattice.trackBunch(b,trackDict)
 #	if (i+1)%10==0 or i <9:
 	bunchtwissanalysis.analyzeBunch(b)
 	Ex = bunchtwissanalysis.getEmittance(0)
 	Ey = bunchtwissanalysis.getEmittance(1)
+	x = bunchtwissanalysis.getCorrelation(0,0)
+	y = bunchtwissanalysis.getCorrelation(2,2)
 	emitXcorr.append(Ex)
 	emitYcorr.append(Ey)
+	xCorr.append(x)
+	yCorr.append(y)
 
 x_space1 =[ (b.x(i), b.px(i)) for i in range(n_particles)]
 #lostbunch.dumpBunch("lostbunch_corr{}{:.0e}.dat".format(strIn))
@@ -274,7 +312,7 @@ def save_dict(data,filename):
 		w.write(",".join(out)+"\n")
 	w.close()
 
-d = {"emitX":emitX,"emitY":emitY,"emitXcorr":emitXcorr,"emitYcorr":emitYcorr,"turn":turn}
+d = {"emitX":emitX,"emitY":emitY,"emitXcorr":emitXcorr,"emitYcorr":emitYcorr,"xMean":xMean,"yMean":yMean,"xCorr":xCorr,"yCorr":yCorr,"turn":turn}
 save_dict(d,"data/emitances{}.csv".format(strIn)) 
 
 d = {"s":beta_x0[0],"beat_x0":beat_x0,"beat_x1":beat_x1,"beat_y0":beat_y0,"beat_y1":beat_y1}
@@ -286,9 +324,9 @@ beatxBPM2 = (betaX2/betaX0-1)*100
 beatyBPM1 = (betaY1/betaY0-1)*100
 beatyBPM2 = (betaY2/betaY0-1)*100
 
-sBPM=[np.mean(bpm[1:]) for bpm in bc.bpmList]
-d = {"sBPM":sBPM,"beatxBPM1":beatxBPM1,"beatxBPM2":beatxBPM2,"beatyBPM1":beatyBPM1,"beatyBPM2":beatyBPM2}
-save_dict(d,"data/beatingBPM_{}_{}_{:.0e}.csv".format(n_particles,emitx,total_macroSize)) 
+#sBPM=[np.mean(bpm[1:]) for bpm in bc.bpmList]
+#d = {"sBPM":sBPM,"beatxBPM1":beatxBPM1,"beatxBPM2":beatxBPM2,"beatyBPM1":beatyBPM1,"beatyBPM2":beatyBPM2}
+#save_dict(d,"data/beatingBPM_{}_{}_{:.0e}.csv".format(n_particles,emitx,total_macroSize)) 
 
 #--------------------------------------------------------------------------------
 
@@ -343,6 +381,10 @@ plt.subplots_adjust(bottom=0.15,left=0.15,hspace=0.5)
 plt.grid(True, ls = '--')
 #plt.title('Phase Space in (x, $p_x$) plane, N = {} particles, turn = 0'.format(n_particles))
 
+#plt.figure()
+#s_tw = [x.data['s'] for x in beamline]
+#plt.plot(s_tw,twiss_sc[:,0],label=r'$\beta_x$')
+#plt.plot(s_tw,twiss_sc[:,2],label=r'$\beta_y$')
 #--------------------------------------------------------------------------------
 plt.show()
 #--------------------------------------------------------------------------------
