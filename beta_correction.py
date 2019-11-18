@@ -24,9 +24,11 @@ class betaCorrection:
 		self.lattice = lattice
 		self.bunch = bunch
 		self.corrDict = {}
+		self.quadDict = {}
 		self.bpmList = []
 		self.bpmIndex = [] # positions of bpms in TwissData-like output
 		self.solution = 0.0
+		self.success = False
 		
 	def getSolution(self):
 		print(self.solution)
@@ -56,16 +58,19 @@ class betaCorrection:
 		print("Numbers of monitors found {}".format(len(self.bpmList)))
 		print("Numbers of correctors found {}".format(len(self.corrDict)))
 		
-
-		theta = np.zeros(12)
+		n_corr = len(self.corrDict.keys())
+		theta = np.zeros(n_corr)
 		cons = [{"type": "ineq", "fun": lambda x: A*len(x)-np.sum(x**2)}]
 		optionsDict = {'rhobeg':rhobeg, 'disp': True}
 
-		vec = som(self.periodicBeta, theta, method="COBYLA", constraints=cons, options=optionsDict)
-
-		self.setCorrectors(vec.x)
-		self.solution = vec.x
-
+		try:
+			vec = som(self.periodicBeta, theta, method="COBYLA", constraints=cons, options=optionsDict)
+			self.setCorrectors(vec.x)
+			self.solution = vec.x
+			self.success = True
+		except:
+			self.setCorrectors(np.zeros(n_corr))
+			self.success = False
 
 	def findElements(self,pattern):		
 
@@ -73,10 +78,13 @@ class betaCorrection:
 		for node in nodes:
 			name = node.getName()
 			type=node.getType()
-			if pattern in name.lower():
-				if type == "quad teapot" or type == "multipole teapot":
+			if type == "quad teapot" or type == "multipole teapot":
+				if pattern in name.lower():
 					position = self.lattice.getNodePositionsDict()[node]
 					self.corrDict[name] = position
+				else:
+					self.quadDict[name] = node.getParam("kq")
+
 			if type == "monitor teapot":
 				s_i,s_f = self.lattice.getNodePositionsDict()[node]
 				self.bpmList.append((name,round(s_i,6),round(s_f,6)))
@@ -112,7 +120,6 @@ class betaCorrection:
 				else:
 					print("Problem with element {} occured. It's {}, but has to be quad/multipole".format(name,type))
 
-
 	def getBetaBpm(self,TwissDataX,TwissDataY):
 
 		betaX = [x[1] for i,x in enumerate(TwissDataX[-1]) if i in self.bpmIndex]
@@ -131,21 +138,63 @@ class betaCorrection:
 		TwissDataX,TwissDataY = matrix_lattice.getRingTwissDataX(),matrix_lattice.getRingTwissDataY()
 		betaX,betaY = self.getBetaBpm(TwissDataX,TwissDataY)
 
-		metric_x = (np.max(betaX)-np.min(betaX))*np.std(betaX)
-		metric_y = (np.max(betaY)-np.min(betaY))*np.std(betaY)
-	    
-		if np.abs(metric_x - metric_y) > np.max([metric_x,metric_y]):
-			if metric_x < metric_y:
-				metric = 2*metric_y
-			else:
-				metric = 2*metric_x
+#		metric_x = (np.max(betaX)-np.min(betaX))*np.std(betaX)
+#		metric_y = (np.max(betaY)-np.min(betaY))*np.std(betaY)
+		metric_x = (1.0-np.min(betaX)/np.max(betaX))
+		metric_y = (1.0-np.min(betaY)/np.max(betaY))
+
+		f_min,f_max=sorted([metric_x,metric_y])
+
+		if f_max-f_min > f_min:
+			metric = 2*f_max
 		else:
 			metric = metric_x+metric_y    
 		return metric
 
 
+	def setQuads(self,x):
+		kd,kf = x[0],x[-1]
+		for name in self.quadDict.keys():
+			elem =self.lattice.getNodeForName(name)
+			type = elem.getType()
+			if type=="quad teapot" and "d" in name:
+				elem.setParam("kq", kd)
+			if type=="quad teapot" and "f" in name:
+				elem.setParam("kq", kf)
+
+	def getTunesDeviation(self,x,qx0,qy0):
+		self.setQuads(x)
+		matrix_lattice = TEAPOT_MATRIX_Lattice(self.lattice,self.bunch)
+
+		dqx=matrix_lattice.getRingTwissDataX()[0][-1][1]-qx0
+		dqy=matrix_lattice.getRingTwissDataY()[0][-1][1]-qy0
+
+		metric = dqx**2+dqy**2
+
+		return metric
 
 
+	def fixTunes(self,rhobeg=5e-5,A=0.0069,qx0=0.1234,qy0=0.1234):
+	
+		print("Numbers of main quads found {}".format(len(self.quadDict)))
+		
+		for key,val in self.quadDict.items():
+			if "d" in key:
+				kd=val
+			if "f" in key:
+				kf=val
+		x = [kd,kf]
+		cons = [{"type": "ineq", "fun": lambda x: A*len(x)-np.sum(x**2)}]
+		optionsDict = {'rhobeg':rhobeg, 'disp': True}
+		arg=(qx0,qy0)
+
+		try:
+			vec = som(self.getTunesDeviation, x, method="COBYLA", constraints=cons, options=optionsDict,args=arg)
+			self.setQuads(vec.x)
+			self.success = True
+		except:
+			self.setQuads(kd,kf)
+			self.success = False
 
 
 
