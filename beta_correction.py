@@ -133,6 +133,7 @@ class betaCorrection:
 	def periodicBeta(self,theta):
 
 		self.setCorrectors(theta)
+		print(theta)
 
 		matrix_lattice = TEAPOT_MATRIX_Lattice(self.lattice,self.bunch)
 		TwissDataX,TwissDataY = matrix_lattice.getRingTwissDataX(),matrix_lattice.getRingTwissDataY()
@@ -153,6 +154,7 @@ class betaCorrection:
 
 
 	def setQuads(self,x):
+		#print(x)
 		kd,kf = x[0],x[-1]
 		for name in self.quadDict.keys():
 			elem =self.lattice.getNodeForName(name)
@@ -165,9 +167,14 @@ class betaCorrection:
 	def getTunesDeviation(self,x,qx0,qy0):
 		self.setQuads(x)
 		matrix_lattice = TEAPOT_MATRIX_Lattice(self.lattice,self.bunch)
-
-		dqx=matrix_lattice.getRingTwissDataX()[0][-1][1]-qx0
-		dqy=matrix_lattice.getRingTwissDataY()[0][-1][1]-qy0
+		
+		(mux,b,a) = matrix_lattice.getRingTwissDataX()
+		(muy,b,a) = matrix_lattice.getRingTwissDataY()
+		qx1,qy1 = mux[-1][1],muy[-1][1]
+		print("{} {}".format(qx1,qy1))
+		print("{} {}".format(qx0,qy0))
+		dqx=1-qx1/qx0
+		dqy=1-qy1/qy0
 
 		metric = dqx**2+dqy**2
 
@@ -177,25 +184,58 @@ class betaCorrection:
 	def fixTunes(self,rhobeg=5e-5,A=0.0069,qx0=0.1234,qy0=0.1234):
 	
 		print("Numbers of main quads found {}".format(len(self.quadDict)))
+		self.findElements(pattern)
 		
 		for key,val in self.quadDict.items():
 			if "d" in key:
 				kd=val
 			if "f" in key:
 				kf=val
-		x = [kd,kf]
+
+		theta = [0 for x in self.corrDict.keys()]+[kd,kf]
+		#print(theta)
 		cons = [{"type": "ineq", "fun": lambda x: A*len(x)-np.sum(x**2)}]
 		optionsDict = {'rhobeg':rhobeg, 'disp': True}
 		arg=(qx0,qy0)
 
 		try:
-			vec = som(self.getTunesDeviation, x, method="COBYLA", constraints=cons, options=optionsDict,args=arg)
-			self.setQuads(vec.x)
+			vec = som(self.periodicFun, x, method="COBYLA", constraints=cons, options=optionsDict,args=arg)
+			self.setCorrectors(vec.x[:-2])
+			self.setQuads(vec.x[-2:])
 			self.success = True
 		except:
-			self.setQuads(kd,kf)
+			self.setCorrectors(theta[:-2])
+			self.setQuads(theta[-2:])
 			self.success = False
 
+
+	def periodicFun(self,theta,qx0,qy0):
+
+		self.setCorrectors(theta[:-2])
+		self.setQuads(theta[-2:])
+
+		matrix_lattice = TEAPOT_MATRIX_Lattice(self.lattice,self.bunch)
+		TwissDataX,TwissDataY = matrix_lattice.getRingTwissDataX(),matrix_lattice.getRingTwissDataY()
+		betaX,betaY = self.getBetaBpm(TwissDataX,TwissDataY)
+
+		(mux,b,a) = TwissDataX
+		(muy,b,a) = TwissDataY
+		qx1,qy1 = mux[-1][1],muy[-1][1]
+		print("{} {}".format(qx1,qy1))
+		print("{} {}".format(qx0,qy0))
+		f_x=1-qx1/qx0
+		f_y=1-qy1/qy0
+
+		metric_x = (1.0-np.min(betaX)/np.max(betaX))
+		metric_y = (1.0-np.min(betaY)/np.max(betaY))
+
+		f_min,f_max=sorted([metric_x,metric_y,f_x,f_y])
+
+		if f_max-f_min > f_min:
+			metric = 2*f_max
+		else:
+			metric = metric_x+metric_y    
+		return metric
 
 
 
