@@ -1,0 +1,68 @@
+!---------------------  DRIFT SPACES DEFINITION  ---------------------
+DR: drift, L = 1.191;
+DRB: drift, L = 2.618;
+ 
+
+!--------------------------  BENDING MAGNET ---------------------------
+RB: SBEND,L = 2.6179929418,ANGLE = 0.26179929418;
+DRB: drift, L =  2.6179929418;
+! ------------------- horizontal quadrupole ----------------------------
+
+kf = 5.41819e-02;
+kd = -5.25048e-02;
+   
+QF:  quadrupole, L = 4.0,  K1 = kf;
+QD:  quadrupole, L = 4.0,  K1 = kd;
+
+!-------------------------------------------------------------------------
+
+kn1_corr_00 = 0;
+kn1_corr_01 = 0;
+kn1_corr_10 = 0;
+kn1_corr_11 = 0;
+kn1_corr_20 = 0;
+kn1_corr_21 = 0;
+kn1_corr_30 = 0;
+kn1_corr_31 = 0;
+kn1_corr_40 = 0;
+kn1_corr_41 = 0;
+kn1_corr_50 = 0;
+kn1_corr_51 = 0;
+
+
+CORR_00: quadrupole, L=0.01, K1 = kn1_corr_00;
+CORR_01: quadrupole, L=0.01, K1 = kn1_corr_01;
+CORR_10: quadrupole, L=0.01, K1 = kn1_corr_10;
+CORR_11: quadrupole, L=0.01, K1 = kn1_corr_11;
+CORR_20: quadrupole, L=0.01, K1 = kn1_corr_20;
+CORR_21: quadrupole, L=0.01, K1 = kn1_corr_21;
+CORR_30: quadrupole, L=0.01, K1 = kn1_corr_30;
+CORR_31: quadrupole, L=0.01, K1 = kn1_corr_31;
+CORR_40: quadrupole, L=0.01, K1 = kn1_corr_40;
+CORR_41: quadrupole, L=0.01, K1 = kn1_corr_41;
+CORR_50: quadrupole, L=0.01, K1 = kn1_corr_50;
+CORR_51: quadrupole, L=0.01, K1 = kn1_corr_51;
+
+BPM_00: monitor;
+BPM_01: monitor;
+BPM_10: monitor;
+BPM_11: monitor;
+BPM_20: monitor;
+BPM_21: monitor;
+BPM_30: monitor;
+BPM_31: monitor;
+BPM_40: monitor;
+BPM_41: monitor;
+BPM_50: monitor;
+BPM_51: monitor;
+
+! ---------------------------  LINE DEFINITION ---------------------------
+CELLA0: line = (QF,DR,BPM_00,DRB,CORR_00,DR,QD,DR,CORR_01,DRB,BPM_01,DR);
+CELLA1: line = (QF,DR,BPM_10,DRB,CORR_10,DR,QD,DR,CORR_11,DRB,BPM_11,DR);
+CELLA2: line = (QF,DR,BPM_20,DRB,CORR_20,DR,QD,DR,CORR_21,DRB,BPM_21,DR);
+CELLA3: line = (QF,DR,BPM_30,DRB,CORR_30,DR,QD,DR,CORR_31,DRB,BPM_31,DR);
+CELLA4: line = (QF,DR,BPM_40,DRB,CORR_40,DR,QD,DR,CORR_41,DRB,BPM_41,DR);
+CELLA5: line = (QF,DR,BPM_50,DRB,CORR_50,DR,QD,DR,CORR_51,DRB,BPM_51,DR);
+fodo: line= (CELLA0,CELLA1,CELLA2,CELLA3,CELLA4,CELLA5);
+!------------------------------------------------------------------------
+
