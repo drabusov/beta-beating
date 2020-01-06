@@ -51,7 +51,7 @@ class _possibleElementType:
 			Method. Confirms validity of element type.
 			"""
 		name = name_in.lower()
-		if self.__names_type.count(name) == 0:
+		if name not in self.__names_type:
 			print "Error creating lattice element:"
 			print "There is no element with type: ", name
 			print "Stop."
@@ -302,14 +302,40 @@ class MADX_Parser:
 		#the initialize can be recursive if there are nested MADX files
 		fl = open(os.path.join(madFilePath, fileName))
 
-		for stg in fl:
-			if "call" in stg.lower() and "file" in stg.lower():
-				new_file = self._parseNestedFileLine(stg)
-				print("NESTED FILE")
+		for str in fl:
+			#check if the line is a comment
+			if str.find("!") == 0:
+				str_local = ""
+				continue
+			#check if the line is a comment
+			if str.find("//") == 0:
+				str_local = ""
+				continue
+			#check the empty line
+			if str == "":
+				str_local = ""
+				continue
+			# remove spaces, capital letters, words,...
+			tmp=str[:].lower().split()
+			str0="".join([x for x in tmp if x not in ["real","const"]]) # removes "const" and "real" from var definitions
+			str0 = "".join(str0.split()) # removes all spaces
+			#take off the ";" at end of each line
+			if str0.rfind(";") > 0:
+				str_local = ""
+				for i in range(str0.rfind(";")):
+					str_local = "".join([str_local,str0[i]])
+				str_local.strip()
+			# deal with multi-line definitions in madx file
+			# is it better to preliminary collect all the lines, joi ands split by ";"?
+			else:
+				pass
+#				print("str without sign ; at the end, check it:\n{}".format(str0))
+			#check if there is a nested file
+			if "call" in str.lower() and "file" in str.lower():
+				new_file = self._parseNestedFileLine(str)
 				self.collect_madx_lines(new_file,self.madxFilePath)
 			else:
-				self._madxLines.append(stg)
-
+				self._madxLines.append(str_local)
 		
 
 	def parse(self,MADXfileName):
@@ -325,31 +351,10 @@ class MADX_Parser:
 		self.collect_madx_lines(fileName,self.madxFilePath)
 
 
-		for str in self._madxLines:
+		for str_local in self._madxLines:
 			loc_flag_elem = True
-			#take off the ";" at end of each line
-			str0 = "".join(("".join(str[:].lower().split("const "))).split()) # remove "const" from var definitions! remove all spaces!
-			if str0.rfind(";") > 0:
-				str_local = ""
-				for i in xrange(str0.rfind(";")):
-					str_local = "".join([str_local,str0[i]])
-			str_local.strip()
-			#check if the line is a comment
-			if str.find("!") == 0:
-				str_local = ""
-				continue
-			#check if the line is a comment
-			if str.find("//") == 0:
-				str_local = ""
-				continue
-
-			#check the empty line
-			if str == "":
-				str_local = ""
-				continue
-
-			
-			#Parse element/variable":="/sequence definition.  !! parse refer !!
+		
+			#Parse element/variable":="/sequence definition
 			if "=" in str_local and ":" not in str_local.split("=")[0]: # here we avoid the variable parsing twice 
 				loc_flag_elem = False # in order to avoid the parsing as an element
 				if "at=" not in str_local:
@@ -374,13 +379,19 @@ class MADX_Parser:
 			if re.search(r'[\w]* *:.*',str_local):
 				if(str_local.rfind("sequence") >=0):
 
-					localValDict =self.calculateVariables() # all variables are ready, now we can recalculate them  
-
 					tokens = str_local.split(":") # is it possible to have more than two tokens here?
 					self._sequencename = tokens[0]
-					tmp_str = ":".join(tokens[1:]).lower()
+					tmp_str = ":".join(tokens[1:])
 					aux = [x.split("l=")[-1] for x in tmp_str.split(",") if "l=" in x]
-					self._sequencelength = eval(aux[0])
+
+					var = _variable()
+					var.parseLine("SEQUENCE_LEN={}".format(aux[0]))
+					self._varDict[var.getName()] = var
+
+					localValDict =self.calculateVariables() # all variables are ready, now we can recalculate them  
+					self._sequencelength = self._varDict["SEQUENCE_LEN"].getValue()
+					print("SEQUENCE_LEN {}".format(self._sequencelength))
+
 					aux = [x.split("refer=")[-1] for x in tmp_str.split(",") if "refer=" in x]
 					if not aux:
 						elementRefer = "centre"
@@ -434,8 +445,6 @@ class MADX_Parser:
 				latt_elem = self._accElemDict[elem_name]
 				# he have the element, let's replace variables in parameters by numerical values here
 				latt_elem = self.recalculateParameters(latt_elem,localValDict)
-				#print("NAME {} POSITION {} LEN {}".format(elem_name,position,latt_elem.getParameter("l")))
-
 				length = latt_elem.getParameter("l") # check, if the length can be a variable
 
 				if "from" in latt_elem.getParameters().keys():
@@ -445,21 +454,45 @@ class MADX_Parser:
 					position += refer_elem.getParameter("position")
 
 				latt_elem.addParameter("position", position)
-#				if(latt_elem.hasParameter("apertype")!=0):
-#					latt_aper_entry = self.makeAperture(latt_elem)
-#					latt_aper_entry.addParameter("position", position-length/2.0)
-#					latt_aper_exit = self.makeAperture(latt_elem)
-#					latt_aper_exit.addParameter("position", position+length/2.0)
-#					latt_drift = self.makeDrift(latt_elem)
-#					self._sequencelist.append(latt_drift)
-#					self._sequencelist.append(latt_aper_entry)
-#					self._sequencelist.append(latt_elem)
-#					self._sequencelist.append(latt_aper_exit)
-#					aper_warning = aper_warning + 2
-#				else:
-				latt_drift = self.makeDrift(latt_elem,elementRefer)
-				self._sequencelist.append(latt_drift)
-				self._sequencelist.append(latt_elem)
+				if latt_elem.hasParameter("apertype"):
+					latt_aper_entry = self.makeAperture(latt_elem)
+					latt_aper_entry.addParameter("position", position-length/2.0)
+					latt_aper_exit = self.makeAperture(latt_elem)
+					latt_aper_exit.addParameter("position", position+length/2.0)
+					latt_drift = self.makeDrift(latt_elem,elementRefer)
+					self._sequencelist.append(latt_drift)
+					self._sequencelist.append(latt_aper_entry)
+					self._sequencelist.append(latt_elem)
+					self._sequencelist.append(latt_aper_exit)
+					aper_warning = aper_warning + 2
+				else:
+					latt_drift = self.makeDrift(latt_elem,elementRefer)
+					self._sequencelist.append(latt_drift)
+					self._sequencelist.append(latt_elem)
+
+			if(str_local.rfind("endsequence") >= 0):
+				#If the last element is not at the end of the lattice, make a drift		
+				if not len(self._sequencelist):
+					print "Warning: Creating empty lattice."
+					sys.exit(1)
+				else:
+					#If the last element is not at the end of the lattice, make a drift
+					lattEnd = MADX_LattElement("lattEnd", "marker")
+					endPos = float(self._sequencelength)
+					print "endPos", endPos 
+					lattEnd.addParameter("position", endPos)
+					lattEnd.addParameter("l", 0)
+					latt_drift = self.makeDrift(lattEnd,elementRefer)
+					self._sequencelist.append(latt_drift)
+					self._sequencelist.append(lattEnd)
+					print("SEQUENCE_LEN {}".format(self._sequencelength))				
+					
+				endlength = float(self._sequencelength) - (float(self._sequencelist[-1].getParameter("position")) + 0.5*float(self._sequencelist[-1].getParameter("l")))
+				if(endlength < -1e-10):
+					print "Warning: Lattice parsing resulted in a lattice with length longer than specified by sequence command."
+
+				
+
 
 		print("all variables found {}".format(self._varDict.keys()))
 
@@ -467,19 +500,6 @@ class MADX_Parser:
 			print "Warning, adding", aper_warning ,"aperture nodes to the teapot lattice. That will slow down the simluation."
 			print "If the lost of particles on the aperture is not necessary, please use a madx file without the aperture labels."
 		
-		#If the last element is not at the end of the lattice, make a drift		
-		nelems = len(self._sequencelist)
-		#print 'number of elems', nelems
-		if(nelems == 0):
-			print "Warning: Creating empty lattice."
-			sys.exit(1)
-		endlength = float(self._sequencelength) - (float(self._sequencelist[nelems-1].getParameter("position")) + 0.5*float(self._sequencelist[nelems-1].getParameter("l")))
-		if(endlength < -1e-10):
-			print "Warning: Lattice parsing resulted in a lattice with length longer than specified by sequence command."
-		if(endlength > 0):
-			latt_drift = MADX_LattElement("end drift", "drift")
-			latt_drift.addParameter("l", endlength)
-			self._sequencelist.append(latt_drift)
 
 
 	def calculateVariables(self):
@@ -534,12 +554,10 @@ class MADX_Parser:
 		return localValDict
 
 	def recalculateParameters(self,accElem,localValDict):
+		#-----------------------------------------------
+		#replace all elem[key] substrings in element by variables
+		#-----------------------------------------------
 		name = accElem.getName()
-		#print("CALCULATION OF PARAMS, ELEMENT NAME: {}".format(name))
-		#-----------------------------------------------
-		#replace all elem[key] substrings in element by
-		#variables
-		#-----------------------------------------------
 		accElemDictInit = self._accElemDict.copy()
 		accElemDictCp = self._accElemDict.copy()
 		doNotStop = True
@@ -568,8 +586,8 @@ class MADX_Parser:
 				kvs[key] = val
 		if(len(accElemDictCp) == len(accElemDictInit)):
 			print "=========== Unresolved AccElements============"
-			#for name,accElem in accElemDictCp.iteritems():
-			#	print "name=",name,"  params=",accElem.getParameters()
+			for name,accElem in accElemDictCp.iteritems():
+				print "name=",name,"  params=",accElem.getParameters()
 			print "=========== MADX File Problem ==============="
 			print "=================STOP======================="
 			sys.exit(1)
@@ -613,38 +631,34 @@ class MADX_Parser:
 		# Now we have to create a drift between elements 
 		if elementRefer == "entry":
 			refer = [1.0,0.0]
-		if elementRefer == "centre":
+		if elementRefer in ["centre", "center"]:
 			refer = [0.5,0.5]
 		if elementRefer == "exit":
 			refer = [0.0,1.0]
 
-		if len([x for x in ("entry","centre","exit") if x == elementRefer]) !=1:
+		if elementRefer not in ("entry","centre","center","exit"):
 			print "=============MADX File problem ==============",
 			print "Problem with sequence, refer is:",elementRefer
-			print "Refer has to be one of :", ("entry","centre","exit")
+			print "Refer has to be one of :", ("entry","centre","center","exit")
 			print "============ STOP =========================="
 			sys.exit(1)		
 	
-		seqlength = len(self._sequencelist)
 		lenUp = 0.0 # upstream
 		lenDown = 0.0 # downstream
-		if seqlength == 0:
+		if not self._sequencelist:
 			posUp = 0.0
 			lenDown = downstreamelem.getParameter("l")
 		else:
-			upstreamelem = self._sequencelist[seqlength-1]
+			upstreamelem = self._sequencelist[-1]
 			lenUp = upstreamelem.getParameter("l")
 			lenDown = downstreamelem.getParameter("l")
 			posUp = upstreamelem.getParameter("position")
-			#print("drift betweed {} and {} is:".format(downstreamelem.getName(),upstreamelem.getName()))
 		posDown = downstreamelem.getParameter("position")
-		driftlength = posDown - posUp - refer[0]*lenUp -refer[1]*lenDown
-		#print(driftlength)
-		#print("{} positionDown {} positionUp {} difference {}".format(downstreamelem.getName(),posDown,posUp,posDown-posUp))
-		#print("lenDown {} lenUp {}".format(lenDown,lenUp))		
+		driftlength = abs(posDown - posUp) - refer[0]*lenUp -refer[1]*lenDown
 
-		name = "Drift{}".format(seqlength)
+		name = "Drift{}".format(len(self._sequencelist)//2)
 		type = "drift"
+		print name, " ", driftlength
 		
 		if driftlength < 0:
 			print "Warning: Drift between {} and {} has negative length, value = {}".format(upstreamelem.getName(), downstreamelem.getName(),driftlength)
@@ -752,11 +766,12 @@ class MADX_Parser:
 		if "collimator" in type_upd.lower():
 			type_upd = "drift"
 		if "monitor" in type_upd.lower():
-			type_upd = "monitor"
+#			type_upd = "monitor" #!!!
+			type_upd = "drift"
 		if "kicker" in type_upd.lower():
 			type_upd = "kicker"
 		if "elseparator" in type_upd.lower():
-			type_upd = "marker"
+			type_upd = "drift"
 		if "instrument" in type_upd.lower():
 			type_upd = "marker"
 		if "rfcavity" in type_upd.lower(): # matrix doesnt exist
@@ -770,9 +785,7 @@ class MADX_Parser:
 			lattElem = MADX_LattElement(name, type)
 			print "Warning: Empty lattice element type."
 
-		#print(lattElem.getParameters())
 		lattElem_upd = self.parseParameters(line_init, lattElem)
-		#print("params added {}".format(lattElem_upd.getParameters()))
 				
 		return lattElem_upd
 
@@ -861,4 +874,4 @@ class MADX_Parser:
 		for i in range(ind0,ind1):
 			str_res = "".join([str_res,line[i]])
 		return str_res
-#STOP parsing a MAD file if there is a start of mad commands
+#STOP parsing a MADX file if there is a start of madx commands
