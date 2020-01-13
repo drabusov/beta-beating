@@ -72,24 +72,53 @@ class betaCorrection:
 			self.setCorrectors(np.zeros(n_corr))
 			self.success = False
 
-	def findElements(self,patternQuad,patternCorr):		
+	def findElements(self, patternList = ["corr"], quadsDict={}):		
 
+		positionsDict = self.lattice.getNodePositionsDict()
 		nodes = self.lattice.getNodes()
 		for node in nodes:
 			name = node.getName()
 			type=node.getType()
-			if type == "quad teapot" or type == "multipole teapot":
-				if patternCorr in name.lower():
-					position = self.lattice.getNodePositionsDict()[node]
-					self.corrDict[name] = position
-				if type == "quad teapot" and patternQuad in name.lower():
-					self.quadDict[name] = node.getParam("kq")
-				else:
-					pass
+
+			if quadsDict:
+				for key,namesList in quadsDict.items():
+					d = {} # tmp dict
+					if name in namesList:
+						if type == "quad teapot":
+							d[name] = node.getParam("kq")
+						if type == "multipole teapot":
+							d[name] = node.getParam("kls")[1]
+						if type not in ["quad teapot", "multipole teapot"]:
+							print("problem with the element {}. It's not a quad/multipole".format(name))
+						
+					if "corr" not in key:
+						self.quadDict[key] = d	# the structure is: quadDict = { key:{name:k_i}, ... }
+					else:
+						self.corrDict = d 					 
+			else:
+				for pattern in patternList:
+					d = {}
+					if pattern.lower() in name.lower():
+						if type == "quad teapot":
+							d[name] = node.getParam("kq")
+						if type == "multipole teapot":
+							d[name] = node.getParam("kls")[1]
+						if type not in ["quad teapot", "multipole teapot"]:
+							print("problem with the element {}. It's not a quad/multipole".format(name))
+					if "corr" not in key:
+						self.quadDict[key] = d	# the structure is: quadDict = { key:{name:k_i}, ... }
+					else:
+						self.corrDict = d 					 
 
 			if type == "monitor teapot":
-				s_i,s_f = self.lattice.getNodePositionsDict()[node]
+				s_i,s_f = positionsDict[node]
 				self.bpmList.append((name,round(s_i,6),round(s_f,6)))
+
+		if not self.corrDict and not self.quadDict:
+			print("Problem with quadrupoles. Incorect user settings")
+			print("You can either provide a quadsDict={'group_i':[name0,name1...], ... , 'correctors':list(names)} or patternList = ['corr','kf','kd'...]")
+		print(self.corrDict)
+		print(self.quadDict)
 
 
 		# test for periodicity is required here 
@@ -109,18 +138,60 @@ class betaCorrection:
 			#sys.exit(1)
 
 
+	def setQuads(self,x):
+
+		i=0
+		for key,d in self.quadDict.items():
+			print(key)
+
+			tmp =zip(d.keys(),np.array(d.values())+x[i]*np.ones(len(d.values())))
+			tmpDict = dict(tmp)
+
+			for name,val in d.items():
+				elem =self.lattice.getNodeForName(name)
+				type = elem.getType()
+
+				if type=="quad teapot":
+					elem.setParam("kq", val)
+				if type=="multipole teapot":
+					elem.setParam("kls", [0,val])
+				if type not in ["quad teapot","multipole teapot"]:
+					print("Problem with element {} occured. It's {}, but has to be quad/multipole".format(name,type))
+			i+=1
+
+
+
+
+
 	def setCorrectors(self,theta):
 
-		for i,name in enumerate(self.corrDict.keys()):
+		tmp =zip(self.corrDict.keys(),np.array(self.corrDict.values())+theta)
+		tmpDict = dict(tmp)
+		for name,val in tmpDict:
 			elem =self.lattice.getNodeForName(name)
 			type = elem.getType()
 			if type=="quad teapot":
-				elem.setParam("kq", theta[i])
+				elem.setParam("kq", val)
 			else:
 				if type=="multipole teapot":
-					elem.setParam("kls", [0,theta[i]])
+					elem.setParam("kls", [0,val])
 				else:
 					print("Problem with element {} occured. It's {}, but has to be quad/multipole".format(name,type))
+
+
+#		for i,name in enumerate(self.corrDict.keys()):
+#			elem =self.lattice.getNodeForName(name)
+#			type = elem.getType()
+#			if type=="quad teapot":
+#				elem.setParam("kq", theta[i])
+#			else:
+#				if type=="multipole teapot":
+#					elem.setParam("kls", [0,theta[i]])
+#				else:
+#					print("Problem with element {} occured. It's {}, but has to be quad/multipole".format(name,type))
+
+
+
 
 	def getBetaBpm(self,TwissDataX,TwissDataY):
 
@@ -155,20 +226,6 @@ class betaCorrection:
 		return metric
 
 
-	def setQuads(self,x):
-		print(x)
-		i=0
-		for name,k in self.quadDict.items():
-			print(name)
-			elem =self.lattice.getNodeForName(name)
-			type = elem.getType()
-			dk=x[i]
-			if type != "quad teapot":
-				print("smth goes wrong")
-			else:
-				elem.setParam("kq", k+dk)
-			i+=1
-
 	def getTunesDeviation(self,x,qx0,qy0):
 		self.setQuads(x)
 		matrix_lattice = TEAPOT_MATRIX_Lattice(self.lattice,self.bunch)
@@ -201,8 +258,6 @@ class betaCorrection:
 
 		
 		theta = np.zeros(nCorr+nQuad)
-#		theta = np.zeros(nCorr)
-#		theta = np.zeros(nQuad)
 #		theta = np.random.normal(0,10**(-5),nCorr+nQuad)
 		print(theta)
 		cons = [{"type": "ineq", "fun": lambda x: A*len(x)-np.sum(x**2)}]
@@ -211,9 +266,8 @@ class betaCorrection:
 
 		vec = som(self.FFTbeta, theta, method="COBYLA", constraints=cons, options=optionsDict,args=arg)
 
-		self.setCorrectors(vec.x)
-#		self.setCorrectors(vec.x[:-2])
-		#self.setQuads(vec.x[-2:])
+		self.setQuads(vec.x[:nQuadGroups])
+		self.setCorrectors(vec.x[nQuadGroups:])
 		self.solution = vec.x
 
 
@@ -249,13 +303,11 @@ class betaCorrection:
 
 
 	def FFTbeta(self,theta,qx0,qy0,sVar,betaX0,betaY0,suppressAll):
+		
+		nQuadGroups = len(self.quadDict)
 
-#		self.setCorrectors(theta)
-#		self.setQuads(theta)
-		self.setQuads(theta[:2])
-		self.setCorrectors(theta[2:])
-
-
+		self.setQuads(theta[:nQuadGroups])
+		self.setCorrectors(theta[nQuadGroups:])
 
 		matrix_lattice = TEAPOT_MATRIX_Lattice(self.lattice,self.bunch)
 		TwissDataX,TwissDataY = matrix_lattice.getRingTwissDataX(),matrix_lattice.getRingTwissDataY()
