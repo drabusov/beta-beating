@@ -47,32 +47,19 @@ class betaCorrection:
 
 	# A is the constraint for an individual corrector
 	# -A < kick_i < A 
-	def constraintFunc(self,x,A=0.05):
+	def constraintFunc(self,x,A):
 	    return A*len(x)-np.sum(x**2)
 
 		
-	def correction(self,rhobeg=1e-5,A=0.05,pattern="corr"):
-	
-		self.findElements(pattern)
+	def findElements(self, patternDict, quadsDict):
 
-		print("Numbers of monitors found {}".format(len(self.bpmList)))
-		print("Numbers of correctors found {}".format(len(self.corrDict)))
-		
-		n_corr = len(self.corrDict.keys())
-		theta = np.zeros(n_corr)
-		cons = [{"type": "ineq", "fun": lambda x: A*len(x)-np.sum(x**2)}]
-		optionsDict = {'rhobeg':rhobeg, 'disp': True}
+		quadsDictUpd = {}
+		for key,namesList in quadsDict.items():
+			quadsDictUpd[key.lower()] = [name.lower() for name in namesList]
 
-		try:
-			vec = som(self.periodicBeta, theta, method="COBYLA", constraints=cons, options=optionsDict)
-			self.setCorrectors(vec.x)
-			self._solution = vec.x
-			self.success = True
-		except:
-			self.setCorrectors(np.zeros(n_corr))
-			self.success = False
-
-	def findElements(self, patternList = ["corr"], quadsDict={}):		
+		patternDictUpd = {}
+		for pattern,key in patternDict.items():
+			patternDictUpd[pattern.lower()] = key.lower()
 
 		positionsDict = self.lattice.getNodePositionsDict()
 		nodes = self.lattice.getNodes()
@@ -80,35 +67,41 @@ class betaCorrection:
 			name = node.getName()
 			type=node.getType()
 
-			if quadsDict:
-				for key,namesList in quadsDict.items():
-					d = {} # tmp dict
-					if name in namesList:
-						if type == "quad teapot":
-							d[name] = node.getParam("kq")
-						if type == "multipole teapot":
-							d[name] = node.getParam("kls")[1]
-						if type not in ["quad teapot", "multipole teapot"]:
-							print("problem with the element {}. It's not a quad/multipole".format(name))
-						
+			for key,namesList in quadsDictUpd.items():
+				d = {} # tmp dict
+				if name in namesList:
+					if type == "quad teapot":
+						d[name] = node.getParam("kq")
+					if type == "multipole teapot":
+						d[name] = node.getParam("kls")[1]
+					if type not in ["quad teapot", "multipole teapot"]:
+						print("problem with the element {}. It's not a quad/multipole".format(name))
+				if d:
 					if "corr" not in key:
-						self.quadDict[key] = d	# the structure is: quadDict = { key:{name:k_i}, ... }
+						if self.quadDict.has_key(key):
+							self.quadDict[key][name] = d[name]	# the structure is: quadDict = { key:{name1:k_i,name2:k_i,...}, ... }
+						else: 
+							self.quadDict[key] = d
 					else:
-						self.corrDict = d 					 
-			else:
-				for pattern in patternList:
-					d = {}
-					if pattern.lower() in name.lower():
-						if type == "quad teapot":
-							d[name] = node.getParam("kq")
-						if type == "multipole teapot":
-							d[name] = node.getParam("kls")[1]
-						if type not in ["quad teapot", "multipole teapot"]:
-							print("problem with the element {}. It's not a quad/multipole".format(name))
+						self.corrDict[name] = d[name] 					 
+
+			for pattern,key in patternDictUpd.items():
+				d = {} # tmp dict
+				if pattern in name.lower():
+					if type == "quad teapot":
+						d[name] = node.getParam("kq")
+					if type == "multipole teapot":
+						d[name] = node.getParam("kls")[1]
+					if type not in ["quad teapot", "multipole teapot"]:
+						print("problem with the element {}. It's not a quad/multipole".format(name))
+				if d:
 					if "corr" not in key:
-						self.quadDict[key] = d	# the structure is: quadDict = { key:{name:k_i}, ... }
+						if self.quadDict.has_key(key):
+							self.quadDict[key][name] = d[name]	# the structure is: quadDict = { key:{name1:k_i,name2:k_i,...}, ... }
+						else: 
+							self.quadDict[key] = d
 					else:
-						self.corrDict = d 					 
+						self.corrDict[name] = d[name] 					 
 
 			if type == "monitor teapot":
 				s_i,s_f = positionsDict[node]
@@ -142,12 +135,11 @@ class betaCorrection:
 
 		i=0
 		for key,d in self.quadDict.items():
-			print(key)
 
 			tmp =zip(d.keys(),np.array(d.values())+x[i]*np.ones(len(d.values())))
 			tmpDict = dict(tmp)
 
-			for name,val in d.items():
+			for name,val in tmpDict.items():
 				elem =self.lattice.getNodeForName(name)
 				type = elem.getType()
 
@@ -160,14 +152,11 @@ class betaCorrection:
 			i+=1
 
 
-
-
-
 	def setCorrectors(self,theta):
 
 		tmp =zip(self.corrDict.keys(),np.array(self.corrDict.values())+theta)
 		tmpDict = dict(tmp)
-		for name,val in tmpDict:
+		for name,val in tmpDict.items():
 			elem =self.lattice.getNodeForName(name)
 			type = elem.getType()
 			if type=="quad teapot":
@@ -177,18 +166,6 @@ class betaCorrection:
 					elem.setParam("kls", [0,val])
 				else:
 					print("Problem with element {} occured. It's {}, but has to be quad/multipole".format(name,type))
-
-
-#		for i,name in enumerate(self.corrDict.keys()):
-#			elem =self.lattice.getNodeForName(name)
-#			type = elem.getType()
-#			if type=="quad teapot":
-#				elem.setParam("kq", theta[i])
-#			else:
-#				if type=="multipole teapot":
-#					elem.setParam("kls", [0,theta[i]])
-#				else:
-#					print("Problem with element {} occured. It's {}, but has to be quad/multipole".format(name,type))
 
 
 
@@ -203,62 +180,24 @@ class betaCorrection:
 	def getBeta(self,TwissDataX,TwissDataY):
 		return np.transpose(TwissDataX[-1])[-1],np.transpose(TwissDataY[-1])[-1]
 
-	# calculates the value which characterises the periodicity (symmetry) of the lattice
-	# BPMs have to be located periodically
-	def periodicBeta(self,theta):
 
-		self.setCorrectors(theta)
-		print(theta)
+	def correction(self,rhobeg=5e-5,A=0.0069,qx0=0.1234,qy0=0.1234,patternDict=dict(),quadsDict = dict(),betaX0=1.0,betaY0=1.0):
 
-		matrix_lattice = TEAPOT_MATRIX_Lattice(self.lattice,self.bunch)
-		TwissDataX,TwissDataY = matrix_lattice.getRingTwissDataX(),matrix_lattice.getRingTwissDataY()
-		betaX,betaY = self.getBetaBpm(TwissDataX,TwissDataY)
-
-		metric_x = (1.0-np.min(betaX)/np.max(betaX))
-		metric_y = (1.0-np.min(betaY)/np.max(betaY))
-
-		f_min,f_max=sorted([metric_x,metric_y])
-
-		if f_max-f_min > f_min:
-			metric = 2*f_max
-		else:
-			metric = metric_x+metric_y    
-		return metric
-
-
-	def getTunesDeviation(self,x,qx0,qy0):
-		self.setQuads(x)
-		matrix_lattice = TEAPOT_MATRIX_Lattice(self.lattice,self.bunch)
-		
-		(mux,b,a) = matrix_lattice.getRingTwissDataX()
-		(muy,b,a) = matrix_lattice.getRingTwissDataY()
-		qx1,qy1 = mux[-1][1],muy[-1][1]
-		print("{} {}".format(qx1,qy1))
-		print("{} {}".format(qx0,qy0))
-		dqx=1-qx1/qx0
-		dqy=1-qy1/qy0
-
-		metric = dqx**2+dqy**2
-
-		return metric
-
-
-	def fixTunes(self,rhobeg=5e-5,A=0.0069,qx0=0.1234,qy0=0.1234,patternQuad= "quad",patternCorr = "corr",betaX0=1.,betaY0=1.):
-
-		self.findElements(patternQuad,patternCorr)
+		self.findElements(patternDict,quadsDict)
 		nCorr=len(self.corrDict)
-		nQuad=len(self.quadDict)
+		nQuadGroups=len(self.quadDict)
 
 		L = self.lattice.getLength()
 		sVar = np.linspace(0,L,len(betaX0))
 
 		print("Numbers of monitors found {}".format(len(self.bpmList)))
 		print("Numbers of correctors found {}".format(nCorr))
-		print("Numbers of main quads found {}".format(nQuad))
+		print("Numbers of main families found {}".format(nQuadGroups))
 
+		print(self.quadDict)
 		
-		theta = np.zeros(nCorr+nQuad)
-#		theta = np.random.normal(0,10**(-5),nCorr+nQuad)
+		theta = np.zeros(nCorr+nQuadGroups)
+#		theta = np.random.normal(0,10**(-5),nCorr+nQuadGroups)
 		print(theta)
 		cons = [{"type": "ineq", "fun": lambda x: A*len(x)-np.sum(x**2)}]
 		optionsDict = {'rhobeg':rhobeg,'maxiter':2000, 'disp': True}
@@ -270,6 +209,141 @@ class betaCorrection:
 		self.setCorrectors(vec.x[nQuadGroups:])
 		self.solution = vec.x
 
+
+	def FFTbeta(self,theta,qx0,qy0,sVar,betaX0,betaY0,suppressAll):
+		
+		nQuadGroups = len(self.quadDict)
+
+		self.setQuads(theta[:nQuadGroups])
+		self.setCorrectors(theta[nQuadGroups:])
+
+		matrix_lattice = TEAPOT_MATRIX_Lattice(self.lattice,self.bunch)
+		TwissDataX,TwissDataY = matrix_lattice.getRingTwissDataX(),matrix_lattice.getRingTwissDataY()
+
+		betaX,betaY = np.transpose(TwissDataX[-1]),np.transpose(TwissDataY[-1])
+
+		betxSmpl = np.interp(x=sVar, xp=betaX[0],fp=betaX[1])
+		betySmpl = np.interp(x=sVar, xp=betaY[0],fp=betaY[1])
+
+
+		(mux,a,b_x) = TwissDataX
+		(muy,a,b_y) = TwissDataY
+		qx1,qy1 = mux[-1][1],muy[-1][1]
+		print("{} {}".format(qx1,qy1))
+		print("{} {}".format(qx0,qy0))
+
+		dqx=1-qx1/qx0
+		dqy=1-qy1/qy0
+
+		f = dqx**2+dqy**2
+#		f_x=np.abs(1-qx1/qx0)
+#		f_y=np.abs(1-qy1/qy0)
+
+		beat_x = (betxSmpl-betaX0)
+		beat_y = (betySmpl-betaY0)
+		n = len(beat_x)
+
+		beta_x_fft =np.abs(np.fft.rfft(beat_x))/n
+		beta_y_fft =np.abs(np.fft.rfft(beat_y))/n
+
+		periodicHarmX = [x for i,x in enumerate(beta_x_fft) if not i%6]
+		periodicHarmY = [x for i,x in enumerate(beta_y_fft) if not i%6]
+	
+		AperiodicHarmX = [x for i,x in enumerate(beta_x_fft) if i%6]
+		AperiodicHarmY = [x for i,x in enumerate(beta_y_fft) if i%6]
+
+		if suppressAll:
+			metric_x = np.sum(AperiodicHarmX)/np.sum(beta_x_fft)
+			metric_y = np.sum(AperiodicHarmY)/np.sum(beta_y_fft) 
+		else:
+			metric_x = np.sum(AperiodicHarmX)-np.sum(periodicHarmX)/np.sum(beta_x_fft)
+			metric_y = np.sum(AperiodicHarmY)-np.sum(periodicHarmY)/np.sum(beta_y_fft) 
+
+
+		metric_x = np.max(AperiodicHarmX)/beta_x_fft
+		metric_y = np.max(AperiodicHarmY)/beta_y_fft
+#		arr = [metric_x,metric_y] # only periodicity 
+#		arr = [metric_x**2,metric_y**2,f_x,f_y]
+		arr = [metric_x**2,metric_y**2,f]
+		print(arr)
+		metric = np.sum(arr)    
+		
+#		f_min,f_max=np.min(arr),np.max(arr) # you can rewrite it using sorted~!
+
+#		if f_max-f_min > f_min:
+#			metric = 2*f_max
+#		else:
+#			metric = np.sum(arr)    
+
+#		print(metric)
+
+		return arr
+
+	def matchTunes(self,rhobeg=5e-5,A=0.001,qx0=0.1234,qy0=0.1234,quadsDict = dict(),patternDict= dict(),warm=False):
+
+		if not self.quadDict:
+			self.findElements(patternDict,quadsDict)
+
+		nQuadGroups=len(self.quadDict)
+		
+		theta = np.zeros(nQuadGroups)
+#		theta = np.random.normal(0,10**(-5),nQuadGroups)
+		cons = [{"type": "ineq", "fun": lambda x: A*len(x)-np.sum(x**2)}]
+		optionsDict = {'rhobeg':rhobeg,'maxiter':2000, 'disp': True}
+		arg=(qx0,qy0)
+
+		if warm:
+			vec = som(self.getWarmTunes, theta, method="COBYLA", constraints=cons, options=optionsDict,args=arg)
+		else:
+			vec = som(self.getTunesDeviation, theta, method="COBYLA", constraints=cons, options=optionsDict,args=arg)
+
+		self.setQuads(vec.x)
+		self.solution = vec.x
+
+
+	def getTunesDeviation(self,x,qx0,qy0):
+		self.setQuads(x)
+		matrix_lattice = TEAPOT_MATRIX_Lattice(self.lattice,self.bunch)
+		
+		(mux,b,a) = matrix_lattice.getRingTwissDataX()
+		(muy,b,a) = matrix_lattice.getRingTwissDataY()
+		qx1,qy1 = mux[-1][1],muy[-1][1]
+		print("{} {}".format(qx1,qy1))
+		print("{} {}\n".format(qx0,qy0))
+		dqx=1-qx1/qx0
+		dqy=1-qy1/qy0
+
+		metric = dqx**2+dqy**2
+
+		return metric
+
+	# for sis100 only
+	def getWarmTunes(self,x,qx0,qy0):
+
+		self.setQuads(x)
+
+		kqd = self.lattice.getNodeForName("s11qd11").getParam("kq")
+		kqf = self.lattice.getNodeForName("s11qd12").getParam("kq")
+
+		kWarm1=1.0139780*kqd*1.3/1.76
+		kWarm2=1.0384325*kqf*1.3/1.76
+
+		kqd = self.lattice.getNodeForName("s52qd11").setParam("kq", kWarm1)
+		kqf = self.lattice.getNodeForName("s52qd12").setParam("kq", kWarm2)
+
+		matrix_lattice = TEAPOT_MATRIX_Lattice(self.lattice,self.bunch)
+		
+		(mux,b,a) = matrix_lattice.getRingTwissDataX()
+		(muy,b,a) = matrix_lattice.getRingTwissDataY()
+		qx1,qy1 = mux[-1][1],muy[-1][1]
+		print("{} {}".format(qx1,qy1))
+		print("{} {}\n".format(qx0,qy0))
+		dqx=1-qx1/qx0
+		dqy=1-qy1/qy0
+
+		metric = dqx**2+dqy**2
+
+		return metric
 
 	def periodicFun(self,theta,qx0,qy0):
 
@@ -300,67 +374,4 @@ class betaCorrection:
 		else:
 			metric = np.sum(arr)    
 		return metric
-
-
-	def FFTbeta(self,theta,qx0,qy0,sVar,betaX0,betaY0,suppressAll):
-		
-		nQuadGroups = len(self.quadDict)
-
-		self.setQuads(theta[:nQuadGroups])
-		self.setCorrectors(theta[nQuadGroups:])
-
-		matrix_lattice = TEAPOT_MATRIX_Lattice(self.lattice,self.bunch)
-		TwissDataX,TwissDataY = matrix_lattice.getRingTwissDataX(),matrix_lattice.getRingTwissDataY()
-
-		betaX,betaY = np.transpose(TwissDataX[-1]),np.transpose(TwissDataY[-1])
-
-		betxSmpl = np.interp(x=sVar, xp=betaX[0],fp=betaX[1])
-		betySmpl = np.interp(x=sVar, xp=betaY[0],fp=betaY[1])
-
-
-		(mux,a,b_x) = TwissDataX
-		(muy,a,b_y) = TwissDataY
-		qx1,qy1 = mux[-1][1],muy[-1][1]
-		#print("{} {}".format(qx1,qy1))
-		#print("{} {}".format(qx0,qy0))
-		f_x=np.abs(1-qx1/qx0)
-		f_y=np.abs(1-qy1/qy0)
-
-
-		beat_x = (betxSmpl/betaX0-1)*100
-		beat_y = (betySmpl/betaY0-1)*100
-		n = len(beat_x)
-
-		beta_x_fft =np.abs(np.fft.rfft(beat_x))/n
-		beta_y_fft =np.abs(np.fft.rfft(beat_y))/n
-
-
-		periodicHarmX = [x for i,x in enumerate(beta_x_fft) if not i%6]
-		periodicHarmY = [x for i,x in enumerate(beta_y_fft) if not i%6]
-	
-		AperiodicHarmX = [x for i,x in enumerate(beta_x_fft) if i%6]
-		AperiodicHarmY = [x for i,x in enumerate(beta_y_fft) if i%6]
-
-		if suppressAll:
-			metric_x = np.sum(AperiodicHarmX)
-			metric_y = np.sum(AperiodicHarmY) 
-		else:
-			metric_x = np.sum(AperiodicHarmX)-np.sum(periodicHarmX)
-			metric_y = np.sum(AperiodicHarmY)-np.sum(periodicHarmY) 
-
-		arr = [metric_x,metric_y] # only periodicity 
-		metric = np.sum(arr)    
-#		arr = [metric_x,metric_y,f_x,f_y]
-		
-		f_min,f_max=np.min(arr),np.max(arr) # you can rewrite it using sorted~!
-
-#		if f_max-f_min > f_min:
-#			metric = 2*f_max
-#		else:
-#			metric = np.sum(arr)    
-
-		print(metric)
-
-		return metric
-
 
