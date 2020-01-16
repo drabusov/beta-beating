@@ -260,8 +260,8 @@ class betaCorrection:
 			metric_y = np.sum(AperiodicHarmY)-np.sum(periodicHarmY)/np.sum(beta_y_fft) 
 
 
-		metric_x = np.max(AperiodicHarmX)/beta_x_fft
-		metric_y = np.max(AperiodicHarmY)/beta_y_fft
+		metric_x = np.max(AperiodicHarmX)/np.sum(beta_x_fft)
+		metric_y = np.max(AperiodicHarmY)/np.sum(beta_y_fft)
 #		arr = [metric_x,metric_y] # only periodicity 
 #		arr = [metric_x**2,metric_y**2,f_x,f_y]
 		arr = [metric_x**2,metric_y**2,f]
