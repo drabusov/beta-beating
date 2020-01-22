@@ -27,18 +27,18 @@ class _possibleElementType:
 		self.__names_type.append("kicker")
 		self.__names_type.append("hkicker")
 		self.__names_type.append("vkicker")
-		self.__names_type.append("tkicker") # !!
+		self.__names_type.append("tkicker") 
 		self.__names_type.append("hkick")
 		self.__names_type.append("vkick")
 		self.__names_type.append("rfcavity")
-		self.__names_type.append("rcollimator") # R collimator?  
+		self.__names_type.append("rcollimator")
 		self.__names_type.append("collimator")
 		self.__names_type.append("marker")
 		self.__names_type.append("monitor")
-		self.__names_type.append("hmonitor") # !!
-		self.__names_type.append("vmonitor") # !!
-		self.__names_type.append("dipedge") # !!
-		self.__names_type.append("elseparator") # !!
+		self.__names_type.append("hmonitor")
+		self.__names_type.append("vmonitor")
+		self.__names_type.append("dipedge")
+		self.__names_type.append("elseparator")
 	
 	def __del__(self):
 		"""
@@ -230,7 +230,6 @@ class StringFunctions:
 		"""
 		Method. It returns the set of [element,key] pairs for input string.
 		"""
-		#print("{} {}".format(str_in, type(str_in)))
 		res = []
 		patt=re.compile(r'[\w]*\[[\w]*\]')
 		s_name_key = re.findall(patt,str_in)
@@ -329,7 +328,6 @@ class MADX_Parser:
 			# is it better to preliminary collect all the lines, joi ands split by ";"?
 			else:
 				pass
-#				print("str without sign ; at the end, check it:\n{}".format(str0))
 			#check if there is a nested file
 			if "call" in str.lower() and "file" in str.lower():
 				new_file = self._parseNestedFileLine(str)
@@ -359,7 +357,6 @@ class MADX_Parser:
 				loc_flag_elem = False # in order to avoid the parsing as an element
 				if "at=" not in str_local:
 					# we have a MADX variable here!
-					#print("variable = {}".format(str_local))
 					var = _variable()
 					var.parseLine(str_local)
 					self._varDict[var.getName()] = var
@@ -367,14 +364,8 @@ class MADX_Parser:
 					# we have the defined elem with additional params at the positioning !! not a variable, but can't be parsed as an elem !!
 					tokens = str_local.split(",")
 					name = tokens[0]
-					#print(str_local)
 					elem_tmp = self._accElemDict[name]
-					elem = self.parseParameters(str_local,elem_tmp)	
-					#print(elem_tmp.getParameters())		
-					#print(elem.getParameters())		
-
-				#print("variable/add_params {} FLAG {}".format(str_local, loc_flag_elem))
-
+					elem = self.parseParameters(str_local,elem_tmp)		
 
 			if re.search(r'[\w]* *:.*',str_local):
 				if(str_local.rfind("sequence") >=0):
@@ -390,20 +381,17 @@ class MADX_Parser:
 
 					localValDict =self.calculateVariables() # all variables are ready, now we can recalculate them  
 					self._sequencelength = self._varDict["SEQUENCE_LEN"].getValue()
-					print("SEQUENCE_LEN {}".format(self._sequencelength))
 
 					aux = [x.split("refer=")[-1] for x in tmp_str.split(",") if "refer=" in x]
 					if not aux:
 						elementRefer = "centre"
 					else:
 						elementRefer = aux[0]
-					print(elementRefer)
 
 				else:
 					if ":=" in str_local and "at=" not in str_local:
 						if ":" not in str_local.split(":=")[0]:
 							# we have a MADX variable here!
-							#print("variable string := {}".format(str_local)) 
 							var = _variable()
 							var.parseLine(str_local)
 							self._varDict[var.getName()] = var
@@ -415,9 +403,7 @@ class MADX_Parser:
 							tmp = ",".join([x for x in tokens if "at=" not in x]) # remove location from the string (is it necessary?)
 						else:
 							tmp = str_local
-						#print("tmp str {} FLAG {}".format(tmp,loc_flag_elem))
 						elem = self.parseElem(tmp) # elem can be defined directly at the location!
-						#print("NAME {}".format(elem.getName()))
 						self._accElemDict[elem.getName()] = elem
 
 			#Add elements to the sequence list (and secondary elem params to an elem).
@@ -427,7 +413,6 @@ class MADX_Parser:
 				if(self._sequencename==""):
 					print "Warning, adding elements to sequence with no name."
 				if "," in str_local.split(":")[0]:
-					#print("str_local {}".format(str_local))			
 					tokens = str_local.split(",") 
 					elem_name = tokens[0]	# elem name 100% is the first position, otherwise the user did a mistake
 					tmp = tokens[1:]
@@ -439,16 +424,19 @@ class MADX_Parser:
 					tmp_str = "".join(tokens[1:])
 					tmp = tmp_str.split(",") 
 					aux = [x.split("at=")[-1] for x in tmp if "at=" in x]
-					#print([x.split("at=")[-1] for x in tmp])				
 					position = eval(aux[0]) 
 	
 				latt_elem = self._accElemDict[elem_name]
 				# he have the element, let's replace variables in parameters by numerical values here
 				latt_elem = self.recalculateParameters(latt_elem,localValDict)
-				length = latt_elem.getParameter("l") # check, if the length can be a variable
+
+				# all monitors in PyORBIT have zero len by definition				
+				if "monitor" in latt_elem.getType() and latt_elem.getParameter("l"):
+					latt_elem.addParameter("l", 0.0)
+
+				length = latt_elem.getParameter("l")
 
 				if "from" in latt_elem.getParameters().keys():
-					#print("nested sequence")
 					refer_elem_name = latt_elem.getParameter("from")
 					refer_elem = self._accElemDict[refer_elem_name]
 					position += refer_elem.getParameter("position")
@@ -479,23 +467,17 @@ class MADX_Parser:
 					#If the last element is not at the end of the lattice, make a drift
 					lattEnd = MADX_LattElement("lattEnd", "marker")
 					endPos = float(self._sequencelength)
-					print "endPos", endPos 
 					lattEnd.addParameter("position", endPos)
 					lattEnd.addParameter("l", 0)
 					latt_drift = self.makeDrift(lattEnd,elementRefer)
 					self._sequencelist.append(latt_drift)
 					self._sequencelist.append(lattEnd)
-					print("SEQUENCE_LEN {}".format(self._sequencelength))				
 					
 				endlength = float(self._sequencelength) - (float(self._sequencelist[-1].getParameter("position")) + 0.5*float(self._sequencelist[-1].getParameter("l")))
 				if(endlength < -1e-10):
 					print "Warning: Lattice parsing resulted in a lattice with length longer than specified by sequence command."
 
 				
-
-
-		print("all variables found {}".format(self._varDict.keys()))
-
 		if aper_warning >= 1:
 			print "Warning, adding", aper_warning ,"aperture nodes to the teapot lattice. That will slow down the simluation."
 			print "If the lost of particles on the aperture is not necessary, please use a madx file without the aperture labels."
@@ -503,7 +485,6 @@ class MADX_Parser:
 
 
 	def calculateVariables(self):
-		print("calculateVariables")
 		#---------------------------------------------------------
 		#Now let's substitute elements parameters in variables' expression.
 		#---------------------------------------------------------
@@ -533,7 +514,6 @@ class MADX_Parser:
 		while(doNotStop):
 			doNotStop = False
 			accVarDictInner = accVarDict.copy()
-			#print "debug variables dict. size=",len(accVarDictInner)
 			for name,var in accVarDictInner.iteritems():
 				str_in = var.getExpression()
 				res,val = StringFunctions.calculateString(str_in.lower(),localValDict)
@@ -564,10 +544,8 @@ class MADX_Parser:
 		while(doNotStop):
 			doNotStop = False
 			kvs = accElem.getParameters()
-			#print(kvs)
 			for key,val in kvs.iteritems():
 				if val != None:
-					#print("getElementKeys, elem name {}".format(name))
 					tmp = "{}".format(val)
 					if not tmp.split(","):
 						resArr = StringFunctions.getElementKeys(tmp)
@@ -578,7 +556,6 @@ class MADX_Parser:
 					if(len(resArr) == 0 and accElemDictInit.has_key(name)):
 						del accElemDictInit[name]
 					for [el,k] in resArr:
-						#print("resArr {}".format(resArr))
 						doNotStop = True
 						accElemInside = accElemDictCp[el]
 						replVal = accElemInside.getParameters()[k]
@@ -605,21 +582,22 @@ class MADX_Parser:
 				tmp = ("{}".format(val)).split(",")
 				out = []
 				for aux in tmp:
-					aux = StringFunctions.replaceMath(aux)
-					res,val_out = StringFunctions.calculateString(aux.lower(),localValDict)
+					auxRepl = StringFunctions.replaceMath(aux)
+					res,val_out = StringFunctions.calculateString(auxRepl,localValDict)
+					if not res:
+						val_out = 0.0
+						print "============= MADX File problem ==============",
+						print "Problem with acc. element:",accElem.getName()
+						print "Parameter name:",key,out
+						print "Can not calculate string:",val
+						print "Set variable", aux, "to zero"
+						print "================ CONTINUE ===================\n"
 					if len(tmp) == 1:
 						accElem.getParameters()[key] = val_out # directly
 					else:
 						out+=[val_out]
 				if out:
 					accElem.getParameters()[key] = out
-				if(not res):
-					print "=============MADX File problem ==============",
-					print "Problem with acc. element:",accElem.getName()
-					print "Parameter name:",key
-					print "Can not calculate string:",val
-					print "============ STOP =========================="
-					sys.exit(1)
 
 		return accElem
 
@@ -658,7 +636,6 @@ class MADX_Parser:
 
 		name = "Drift{}".format(len(self._sequencelist)//2)
 		type = "drift"
-		print name, " ", driftlength
 		
 		if driftlength < 0:
 			print "Warning: Drift between {} and {} has negative length, value = {}".format(upstreamelem.getName(), downstreamelem.getName(),driftlength)
@@ -683,8 +660,6 @@ class MADX_Parser:
 			line_init =line_init.replace("}", "!{")
 			line_init="".join([x if "!" not in x else "!" for x in line_init.split("{")])
 			line_init= ",".join([x for x in line_init.split(",") if "!" not in x])
-			#print(line_init)
-			#print(line_tmp)
 			
 			if "aperture" in line_tmp.lower():
 				tmp = [s for s  in line_tmp.split(",") if "apertype" in s.lower()]
@@ -732,9 +707,7 @@ class MADX_Parser:
 				lattElem.addParameter("apertype", apertype[1])
 
 		#Make sure there is always a length parameter.
-		if(lattElem.hasParameter("l")==0):
-			#print("NO LEN PARAMETER DEFINED!! ELEMENT IS {}".format(lattElem.getName()))
-#			lattElem.addParameter("l",0.0)
+		if not lattElem.hasParameter("l"):
 			lattElem.addParameter("l","0.0")
 				
 		return lattElem			
@@ -766,8 +739,8 @@ class MADX_Parser:
 		if "collimator" in type_upd.lower():
 			type_upd = "drift"
 		if "monitor" in type_upd.lower():
-#			type_upd = "monitor" #!!!
-			type_upd = "drift"
+			type_upd = "monitor" #!!!
+#			type_upd = "drift"
 		if "kicker" in type_upd.lower():
 			type_upd = "kicker"
 		if "elseparator" in type_upd.lower():
@@ -781,7 +754,7 @@ class MADX_Parser:
 		for key,val in paramsDict.iteritems():
 			lattElem.addParameter(key,val)
 				
-		if name =='':
+		if not name:
 			lattElem = MADX_LattElement(name, type)
 			print "Warning: Empty lattice element type."
 
@@ -823,9 +796,6 @@ class MADX_Parser:
 		lattElem = MADX_LattElement("Aperture", name)
 		lattElem.addParameter("l", 0.0)
 		dim = downstreamelem.getParameter(name)
-#		tmp = downstreamelem.getParameter(name)
-#		dim = tmp.split(",")
-		#print("dim {}".format(dim))
 		shape_type = downstreamelem.getParameter(type)
 		if shape_type == "circle":
 			shape = 1
@@ -865,7 +835,7 @@ class MADX_Parser:
 		ind1  = line.rfind(dl)
 		str_res=""
 		if ind0 >= ind1 or ind0 < 0 or ind1 < 0:
-			print "Wrong line in the MAD file"
+			print "Wrong line in the MADX file"
 			print "line Call file= defines wrong name of file format"
 			print "Should be : Call file = 'name of file'"
 			print "Line:",line

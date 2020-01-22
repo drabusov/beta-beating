@@ -25,7 +25,7 @@ class betaCorrection:
 		self.bunch = bunch
 		self.corrDict = {}
 		self.quadDict = {}
-		self.bpmList = []
+		self.bpmDict = {}
 		self.bpmIndex = [] # positions of bpms in TwissData-like output
 		self._solution = None
 		
@@ -104,8 +104,8 @@ class betaCorrection:
 						self.corrDict[name] = d[name] 					 
 
 			if type == "monitor teapot":
-				s_i,s_f = positionsDict[node]
-				self.bpmList.append((name,round(s_i,6),round(s_f,6)))
+				# by definition any monitor in PyORBIT has zero len
+				self.bpmDict[name] = np.mean(positionsDict[node])
 
 		if not self.corrDict and not self.quadDict:
 			print("Problem with quadrupoles. Incorect user settings")
@@ -116,15 +116,15 @@ class betaCorrection:
 
 		# test for periodicity is required here 
 		sArr = self.getPositions()
-		s,i=0.0,0
-		for bpm in self.bpmList:
-			#s = sArr[i]
-			while round(s,5)<round(bpm[1],5) or round(s,5)>round(bpm[2],5):
-				i+=1
-				s = sArr[i]
-			self.bpmIndex.append(i)
-
-		n1,n2 = len(self.bpmList),len(self.bpmIndex)
+		I=0
+		for name,position in self.bpmDict.items():
+			for idx,s in enumerate(sArr[I:]):
+				if np.abs(round(s,6)-round(position,6)) < 10**(-4):
+					self.bpmIndex.append(idx)
+					I = idx
+					#print(I)
+					break
+		n1,n2 = len(self.bpmDict),len(self.bpmIndex)
 
 		if n1 != n2:
 			print("Problem with BPMs. There are {} in the lattice, {} found".format(n1,n2))
@@ -190,7 +190,7 @@ class betaCorrection:
 		L = self.lattice.getLength()
 		sVar = np.linspace(0,L,len(betaX0))
 
-		print("Numbers of monitors found {}".format(len(self.bpmList)))
+		print("Numbers of monitors found {}".format(len(self.bpmDict)))
 		print("Numbers of correctors found {}".format(nCorr))
 		print("Numbers of main families found {}".format(nQuadGroups))
 
