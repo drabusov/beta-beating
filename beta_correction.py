@@ -5,16 +5,15 @@ import numpy as np
 import random
 import sys
 from bunch import Bunch
+from orbit.teapot import TEAPOT_MATRIX_Lattice
 
 
 # ATTENTION !!! The python packet numpy and scipy are required
 import numpy as np
 from scipy.optimize import minimize as som
+from scipy.optimize import Bounds
 
-from orbit.teapot import TEAPOT_MATRIX_Lattice
-
-
-class betaCorrection:
+class betaCorrection(object):
 	""" 
 	This routine corrected the closed orbit. Simple method. 
 	"""
@@ -45,11 +44,13 @@ class betaCorrection:
 		return sArr
 
 
-	# A is the constraint for an individual corrector
-	# -A < kick_i < A 
-	def constraintFunc(self,x,A):
-	    return A*len(x)-np.sum(x**2)
+	@staticmethod 
+	def hyperSurface(theta,qx0,qy0):
+		pass
 
+	@staticmethod
+	def normalize(theta):
+		return theta
 		
 	def findElements(self, patternDict, quadsDict):
 
@@ -110,9 +111,6 @@ class betaCorrection:
 		if not self.corrDict and not self.quadDict:
 			print("Problem with quadrupoles. Incorect user settings")
 			print("You can either provide a quadsDict={'group_i':[name0,name1...], ... , 'correctors':list(names)} or patternList = ['corr','kf','kd'...]")
-		print(self.corrDict)
-		print(self.quadDict)
-
 
 		# test for periodicity is required here 
 		sArr = self.getPositions()
@@ -197,13 +195,12 @@ class betaCorrection:
 		print(self.quadDict)
 		
 		theta = np.zeros(nCorr+nQuadGroups)
-#		theta = np.random.normal(0,10**(-5),nCorr+nQuadGroups)
-		print(theta)
-		cons = [{"type": "ineq", "fun": lambda x: A*len(x)-np.sum(x**2)}]
+		cons = [{"type": "ineq", "fun":hyperSurface, "args":(qx0,qy0)}]
+		bounds = Bounds([-A]*len(theta),[A]*len(theta))
 		optionsDict = {'rhobeg':rhobeg,'maxiter':2000, 'disp': True}
 		arg=(qx0,qy0,sVar,betaX0,betaY0,True)
 
-		vec = som(self.FFTbeta, theta, method="COBYLA", constraints=cons, options=optionsDict,args=arg)
+		vec = som(self.FFTbeta, theta, method="COBYLA", constraints=cons, options=optionsDict,args=arg, bounds=bounds)
 
 		self.setQuads(vec.x[:nQuadGroups])
 		self.setCorrectors(vec.x[nQuadGroups:])
@@ -211,6 +208,8 @@ class betaCorrection:
 
 
 	def FFTbeta(self,theta,qx0,qy0,sVar,betaX0,betaY0,suppressAll):
+
+		theta=self.normalize(theta[:])
 		
 		nQuadGroups = len(self.quadDict)
 
@@ -219,25 +218,10 @@ class betaCorrection:
 
 		matrix_lattice = TEAPOT_MATRIX_Lattice(self.lattice,self.bunch)
 		TwissDataX,TwissDataY = matrix_lattice.getRingTwissDataX(),matrix_lattice.getRingTwissDataY()
-
 		betaX,betaY = np.transpose(TwissDataX[-1]),np.transpose(TwissDataY[-1])
 
 		betxSmpl = np.interp(x=sVar, xp=betaX[0],fp=betaX[1])
 		betySmpl = np.interp(x=sVar, xp=betaY[0],fp=betaY[1])
-
-
-		(mux,a,b_x) = TwissDataX
-		(muy,a,b_y) = TwissDataY
-		qx1,qy1 = mux[-1][1],muy[-1][1]
-		print("{} {}".format(qx1,qy1))
-		print("{} {}".format(qx0,qy0))
-
-		dqx=1-qx1/qx0
-		dqy=1-qy1/qy0
-
-		f = dqx**2+dqy**2
-#		f_x=np.abs(1-qx1/qx0)
-#		f_y=np.abs(1-qy1/qy0)
 
 		beat_x = (betxSmpl-betaX0)
 		beat_y = (betySmpl-betaY0)
@@ -259,25 +243,7 @@ class betaCorrection:
 			metric_x = np.sum(AperiodicHarmX)-np.sum(periodicHarmX)/np.sum(beta_x_fft)
 			metric_y = np.sum(AperiodicHarmY)-np.sum(periodicHarmY)/np.sum(beta_y_fft) 
 
-
-		metric_x = np.max(AperiodicHarmX)/np.sum(beta_x_fft)
-		metric_y = np.max(AperiodicHarmY)/np.sum(beta_y_fft)
-#		arr = [metric_x,metric_y] # only periodicity 
-#		arr = [metric_x**2,metric_y**2,f_x,f_y]
-		arr = [metric_x**2,metric_y**2,f]
-		print(arr)
-		metric = np.sum(arr)    
-		
-#		f_min,f_max=np.min(arr),np.max(arr) # you can rewrite it using sorted~!
-
-#		if f_max-f_min > f_min:
-#			metric = 2*f_max
-#		else:
-#			metric = np.sum(arr)    
-
-#		print(metric)
-
-		return arr
+		return metric_x+metric_y
 
 	def matchTunes(self,rhobeg=5e-5,A=0.001,qx0=0.1234,qy0=0.1234,quadsDict = dict(),patternDict= dict(),warm=False):
 
@@ -287,29 +253,37 @@ class betaCorrection:
 		nQuadGroups=len(self.quadDict)
 		
 		theta = np.zeros(nQuadGroups)
-#		theta = np.random.normal(0,10**(-5),nQuadGroups)
-		cons = [{"type": "ineq", "fun": lambda x: A*len(x)-np.sum(x**2)}]
+		bounds = Bounds([-A]*len(theta),[A]*len(theta))
 		optionsDict = {'rhobeg':rhobeg,'maxiter':2000, 'disp': True}
 		arg=(qx0,qy0)
 
 		if warm:
-			vec = som(self.getWarmTunes, theta, method="COBYLA", constraints=cons, options=optionsDict,args=arg)
+			vec = som(self.getWarmTunes, theta, method="COBYLA", bounds=bounds, options=optionsDict,args=arg)
 		else:
-			vec = som(self.getTunesDeviation, theta, method="COBYLA", constraints=cons, options=optionsDict,args=arg)
+			vec = som(self.getTunesDeviation, theta, method="COBYLA", bounds=bounds, options=optionsDict,args=arg)
 
 		self.setQuads(vec.x)
 		self.solution = vec.x
+		print
 
 
 	def getTunesDeviation(self,x,qx0,qy0):
+
+		kw1=self.lattice.getNodeForName("s52qd11").getParam("kq")
+		kw2=self.lattice.getNodeForName("s52qd12").getParam("kq")
+		print("warm quads are {} {}".format(kw1,kw2))
+		kw1=self.lattice.getNodeForName("s52qd11").getParam("kq")
+		kw2=self.lattice.getNodeForName("s52qd12").getParam("kq")
+		print("warm quads are {} {}".format(kw1,kw2))
 		self.setQuads(x)
+
 		matrix_lattice = TEAPOT_MATRIX_Lattice(self.lattice,self.bunch)
 		
 		(mux,b,a) = matrix_lattice.getRingTwissDataX()
 		(muy,b,a) = matrix_lattice.getRingTwissDataY()
 		qx1,qy1 = mux[-1][1],muy[-1][1]
-		print("{} {}".format(qx1,qy1))
-		print("{} {}\n".format(qx0,qy0))
+		#print("{} {}".format(qx1,qy1))
+		#print("{} {}\n".format(qx0,qy0))
 		dqx=1-qx1/qx0
 		dqy=1-qy1/qy0
 
@@ -354,24 +328,72 @@ class betaCorrection:
 		TwissDataX,TwissDataY = matrix_lattice.getRingTwissDataX(),matrix_lattice.getRingTwissDataY()
 		betaX,betaY = self.getBetaBpm(TwissDataX,TwissDataY)
 
-		(mux,b,a) = TwissDataX
-		(muy,b,a) = TwissDataY
-		qx1,qy1 = mux[-1][1],muy[-1][1]
-		print("{} {}".format(qx1,qy1))
-		print("{} {}".format(qx0,qy0))
-		f_x=np.abs(1-qx1/qx0)
-		f_y=np.abs(1-qy1/qy0)
-
 		metric_x = 1.0-np.min(betaX)/np.max(betaX)
 		metric_y = 1.0-np.min(betaY)/np.max(betaY)
 
-		arr = [metric_x,metric_y,f_x,f_y]
-
-		f_min,f_max=np.min(arr),np.max(arr)
+		arr = [metric_x,metric_y]
 
 		if f_max-f_min > f_max:
 			metric = 4*f_max
 		else:
 			metric = np.sum(arr)    
 		return metric
+
+	def hyperBetaBeat(self,rhobeg=5e-5,A=0.1,qx0=0.1234,qy0=0.1234,k=tuple(),patternDict=dict(),quadsDict = dict(),betaX0=1.0,betaY0=1.0):
+
+		#if not self.quadDict:
+		self.findElements(patternDict,quadsDict)
+
+		nQuadGroups=len(self.quadDict)
+
+		self.lattice.getNodeForName("s52qd11").setParam("kq",k[0])
+		self.lattice.getNodeForName("s52qd12").setParam("kq",k[1])
+
+		kw1=self.lattice.getNodeForName("s52qd11").getParam("kq")
+		kw2=self.lattice.getNodeForName("s52qd12").getParam("kq")
+		print("warm quads are {} {}".format(kw1,kw2))
+		k1=self.lattice.getNodeForName("s11qd11").getParam("kq")
+		k2=self.lattice.getNodeForName("s11qd12").getParam("kq")
+		print("cold quads are {} {}".format(k1,k2))
+				
+		theta = np.zeros(nQuadGroups)
+		bounds = Bounds([-A]*len(theta),[A]*len(theta))
+		optionsDict = {'rhobeg':rhobeg,'maxiter':2000, 'disp': True}
+		arg=(qx0,qy0)
+
+		vec = som(self.getTunesDeviation, theta, method="COBYLA", options=optionsDict,args=arg, bounds=bounds)
+
+		self.setQuads(vec.x)
+		kd=self.lattice.getNodeForName("s11qd11").getParam("kq")
+		kf=self.lattice.getNodeForName("s11qd12").getParam("kq")
+		print("sollution found\n")
+
+		matrix_lattice = TEAPOT_MATRIX_Lattice(self.lattice,self.bunch)
+		TwissDataX,TwissDataY = matrix_lattice.getRingTwissDataX(),matrix_lattice.getRingTwissDataY()
+		betaX,betaY = np.transpose(TwissDataX[-1]),np.transpose(TwissDataY[-1])
+
+		L = self.lattice.getLength()
+		sVar = np.linspace(0,L,len(betaX0))
+
+		betxSmpl = np.interp(x=sVar, xp=betaX[0],fp=betaX[1])
+		betySmpl = np.interp(x=sVar, xp=betaY[0],fp=betaY[1])
+
+		beat_x = (betxSmpl-betaX0)
+		beat_y = (betySmpl-betaY0)
+		n = len(beat_x)
+
+		beta_x_fft =np.abs(np.fft.rfft(beat_x))/n
+		beta_y_fft =np.abs(np.fft.rfft(beat_y))/n
+	
+		periodicHarmX = [x for i,x in enumerate(beta_x_fft) if not i%6]
+		periodicHarmY = [x for i,x in enumerate(beta_y_fft) if not i%6]	
+		AperiodicHarmX = [x for i,x in enumerate(beta_x_fft) if i%6]
+		AperiodicHarmY = [x for i,x in enumerate(beta_y_fft) if i%6]
+
+		maxPosX = np.argmax(beta_x_fft)
+		maxPosY = np.argmax(beta_y_fft)
+ 
+		return kd,kf,maxPosX,maxPosY,beta_x_fft[maxPosX],beta_y_fft[maxPosY],np.sum(periodicHarmX)/np.sum(AperiodicHarmX),np.sum(periodicHarmY)/np.sum(AperiodicHarmY) 
+
+
 
