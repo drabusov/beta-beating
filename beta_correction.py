@@ -11,7 +11,6 @@ from orbit.teapot import TEAPOT_MATRIX_Lattice
 # ATTENTION !!! The python packet numpy and scipy are required
 import numpy as np
 from scipy.optimize import minimize as som
-from scipy.optimize import Bounds
 
 class betaCorrection(object):
 	""" 
@@ -44,13 +43,39 @@ class betaCorrection(object):
 		return sArr
 
 
-	@staticmethod 
-	def hyperSurface(theta,qx0,qy0):
-		pass
+	def hyperSurface(self,theta,qx0,qy0):
 
+		theta=self.normalize(theta[:])
+		print("hyper-surface computation")
+
+		nQuadGroups = len(self.quadDict)
+		self.setQuads(theta[:nQuadGroups])
+		self.setCorrectors(theta[nQuadGroups:])
+
+		matrix_lattice = TEAPOT_MATRIX_Lattice(self.lattice,self.bunch)
+		(mux,bTmp,aTmp) = matrix_lattice.getRingTwissDataX()
+		(muy,bTmp,aTmp) = matrix_lattice.getRingTwissDataY()
+		qx,qy = mux[-1][1],muy[-1][1]
+		print("current tunes are {} {}".format(qx,qy))
+		out = np.sqrt((qx-qx0)**2+(qy-qy0)**2)
+
+		print("the distance from set tunes hor:{} ver:{}".format(qx-qx0,qy-qy0))
+		print("out is {}\n".format(out))
+
+		return -out 
+
+
+	# step size, weak focusing approximation
 	@staticmethod
 	def normalize(theta):
-		return theta
+		c0 = 0.01
+		coeff =[[c0,0.,0.,0.],
+			[0.,c0,0.,0.],
+			[0.,0.,1.,0.],
+			[0.,0.,0.,1.]]
+		theta_out = np.dot(coeff,theta)
+		print("dk is {}".format(theta_out))
+		return theta_out
 		
 	def findElements(self, patternDict, quadsDict):
 
@@ -179,7 +204,11 @@ class betaCorrection(object):
 		return np.transpose(TwissDataX[-1])[-1],np.transpose(TwissDataY[-1])[-1]
 
 
-	def correction(self,rhobeg=5e-5,A=0.0069,qx0=0.1234,qy0=0.1234,patternDict=dict(),quadsDict = dict(),betaX0=1.0,betaY0=1.0):
+	def correction(self,qx0=0.1234,qy0=0.1234,patternDict=dict(),quadsDict = dict(),betaX0=1.0,betaY0=1.0):
+
+		method = "COBYLA"
+
+		print(self.quadDict)
 
 		self.findElements(patternDict,quadsDict)
 		nCorr=len(self.corrDict)
@@ -195,55 +224,97 @@ class betaCorrection(object):
 		print(self.quadDict)
 		
 		theta = np.zeros(nCorr+nQuadGroups)
-		cons = [{"type": "ineq", "fun":hyperSurface, "args":(qx0,qy0)}]
-		bounds = Bounds([-A]*len(theta),[A]*len(theta))
-		optionsDict = {'rhobeg':rhobeg,'maxiter':2000, 'disp': True}
-		arg=(qx0,qy0,sVar,betaX0,betaY0,True)
 
-		vec = som(self.FFTbeta, theta, method="COBYLA", constraints=cons, options=optionsDict,args=arg, bounds=bounds)
+		# reasonable initial changes is on the level of 0.1% of quad strength (jac computations or the first step)  
+		epsilon = 1e-3*np.mean(np.abs([np.mean(group.values()) for group in self.quadDict.values()]))
+		cons = [{"type": "eq", "fun":self.hyperSurface, "args":(qx0,qy0)}]		
+		optionsDict = {'disp': True, "eps": epsilon, "ftol": 1e-5} 
+		arg=(sVar,betaX0,betaY0)
 
-		self.setQuads(vec.x[:nQuadGroups])
-		self.setCorrectors(vec.x[nQuadGroups:])
+		if method == "COBYLA":
+			for con in cons:
+				con["type"]="ineq"
+			optionsDict = {'rhobeg':epsilon, 'catol':1e-6, "tol":1e-3,'disp': True}
+
+		fIni = self.observable(theta,*arg)
+		fftX,fftY = self.calculateBeat(self.lattice,self.bunch,sVar,betaX0,betaY0)
+		aIni = self.calculateAperiodic(fftX,fftY)
+
+		vec = som(self.observable, theta, method=method, constraints=cons, options=optionsDict,args=arg)
+
 		self.solution = vec.x
+		# careful! you set dk here! not an absolute value!
+		fCorr = self.observable(vec.x,*arg)
+
+		if fCorr>fIni:
+			# recursion? + random coeff*epsilon
+			optionsDict["rhobeg"]=5*epsilon
+			vec = som(self.observable, theta, method=method, constraints=cons, options=optionsDict,args=arg)
+			
+		self.solution = vec.x
+		# careful! you set dk here! not an absolute value!
+		fCorr = self.observable(vec.x,*arg)
+
+		fftX,fftY = self.calculateBeat(self.lattice,self.bunch,sVar,betaX0,betaY0)
+		aCorr = self.calculateAperiodic(fftX,fftY)
+
+		return fIni,fCorr,aIni,aCorr
 
 
-	def FFTbeta(self,theta,qx0,qy0,sVar,betaX0,betaY0,suppressAll):
+
+	def observable(self,theta,sVar,betaX0,betaY0):
+
+		print("observable/metric computation")
 
 		theta=self.normalize(theta[:])
 		
 		nQuadGroups = len(self.quadDict)
-
 		self.setQuads(theta[:nQuadGroups])
 		self.setCorrectors(theta[nQuadGroups:])
 
-		matrix_lattice = TEAPOT_MATRIX_Lattice(self.lattice,self.bunch)
+		fftBeatX,fftBeatY=self.calculateBeat(self.lattice,self.bunch,sVar,betaX0,betaY0)
+
+		metric=self.calculateMax(fftBeatX,fftBeatY)
+#		metric=self.calculateMax(fftBeatX,fftBeatY)
+		print("the observable/metric is {}\n".format(metric))
+
+		return metric
+
+
+	@staticmethod
+	def calculateBeat(lattice,bunch,sVar,betaX0,betaY0):
+
+		matrix_lattice = TEAPOT_MATRIX_Lattice(lattice,bunch)
 		TwissDataX,TwissDataY = matrix_lattice.getRingTwissDataX(),matrix_lattice.getRingTwissDataY()
 		betaX,betaY = np.transpose(TwissDataX[-1]),np.transpose(TwissDataY[-1])
+		qx,qy = np.transpose(TwissDataX[0])[-1][-1],np.transpose(TwissDataY[0])[-1][-1]
+		print("current tunes are {} {}".format(qx,qy))
 
-		betxSmpl = np.interp(x=sVar, xp=betaX[0],fp=betaX[1])
-		betySmpl = np.interp(x=sVar, xp=betaY[0],fp=betaY[1])
+		betX = np.interp(x=sVar, xp=betaX[0],fp=betaX[1])
+		betY = np.interp(x=sVar, xp=betaY[0],fp=betaY[1])
 
-		beat_x = (betxSmpl-betaX0)
-		beat_y = (betySmpl-betaY0)
-		n = len(beat_x)
+		beatX = (betX-betaX0)
+		beatY = (betY-betaY0)
+		n = len(beatX)
 
-		beta_x_fft =np.abs(np.fft.rfft(beat_x))/n
-		beta_y_fft =np.abs(np.fft.rfft(beat_y))/n
+		fftBeatX =np.abs(np.fft.rfft(beatX))/n
+		fftBeatY =np.abs(np.fft.rfft(beatY))/n
 
-		periodicHarmX = [x for i,x in enumerate(beta_x_fft) if not i%6]
-		periodicHarmY = [x for i,x in enumerate(beta_y_fft) if not i%6]
-	
-		AperiodicHarmX = [x for i,x in enumerate(beta_x_fft) if i%6]
-		AperiodicHarmY = [x for i,x in enumerate(beta_y_fft) if i%6]
+		return fftBeatX,fftBeatY
 
-		if suppressAll:
-			metric_x = np.sum(AperiodicHarmX)/np.sum(beta_x_fft)
-			metric_y = np.sum(AperiodicHarmY)/np.sum(beta_y_fft) 
-		else:
-			metric_x = np.sum(AperiodicHarmX)-np.sum(periodicHarmX)/np.sum(beta_x_fft)
-			metric_y = np.sum(AperiodicHarmY)-np.sum(periodicHarmY)/np.sum(beta_y_fft) 
 
-		return metric_x+metric_y
+	@staticmethod
+	def calculateMax(fftX,fftY):
+		return np.sqrt(np.max(fftX)**2 + np.max(fftY)**2)
+
+	@staticmethod
+	def calculateAperiodic(fftX,fftY,S=6):
+
+		AperiodicHarmX = [x for i,x in enumerate(fftX) if i%S]
+		AperiodicHarmY = [x for i,x in enumerate(fftY) if i%S]
+
+		return np.sqrt(np.sum(AperiodicHarmX)**2 + np.sum(AperiodicHarmY)**2)
+
 
 	def matchTunes(self,rhobeg=5e-5,A=0.001,qx0=0.1234,qy0=0.1234,quadsDict = dict(),patternDict= dict(),warm=False):
 
@@ -253,14 +324,13 @@ class betaCorrection(object):
 		nQuadGroups=len(self.quadDict)
 		
 		theta = np.zeros(nQuadGroups)
-		bounds = Bounds([-A]*len(theta),[A]*len(theta))
 		optionsDict = {'rhobeg':rhobeg,'maxiter':2000, 'disp': True}
 		arg=(qx0,qy0)
 
 		if warm:
-			vec = som(self.getWarmTunes, theta, method="COBYLA", bounds=bounds, options=optionsDict,args=arg)
+			vec = som(self.getWarmTunes, theta, method="COBYLA", options=optionsDict,args=arg)
 		else:
-			vec = som(self.getTunesDeviation, theta, method="COBYLA", bounds=bounds, options=optionsDict,args=arg)
+			vec = som(self.getTunesDeviation, theta, method="COBYLA",options=optionsDict,args=arg)
 
 		self.setQuads(vec.x)
 		self.solution = vec.x
@@ -272,10 +342,12 @@ class betaCorrection(object):
 		kw1=self.lattice.getNodeForName("s52qd11").getParam("kq")
 		kw2=self.lattice.getNodeForName("s52qd12").getParam("kq")
 		print("warm quads are {} {}".format(kw1,kw2))
+
+		self.setQuads(x)
+
 		kw1=self.lattice.getNodeForName("s52qd11").getParam("kq")
 		kw2=self.lattice.getNodeForName("s52qd12").getParam("kq")
 		print("warm quads are {} {}".format(kw1,kw2))
-		self.setQuads(x)
 
 		matrix_lattice = TEAPOT_MATRIX_Lattice(self.lattice,self.bunch)
 		
@@ -357,11 +429,10 @@ class betaCorrection(object):
 		print("cold quads are {} {}".format(k1,k2))
 				
 		theta = np.zeros(nQuadGroups)
-		bounds = Bounds([-A]*len(theta),[A]*len(theta))
 		optionsDict = {'rhobeg':rhobeg,'maxiter':2000, 'disp': True}
 		arg=(qx0,qy0)
 
-		vec = som(self.getTunesDeviation, theta, method="COBYLA", options=optionsDict,args=arg, bounds=bounds)
+		vec = som(self.getTunesDeviation, theta, method="COBYLA", options=optionsDict,args=arg)
 
 		self.setQuads(vec.x)
 		kd=self.lattice.getNodeForName("s11qd11").getParam("kq")
